@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { 
   Scale, AlertTriangle, Tractor, TrendingUp, ArrowUpRight 
 } from "lucide-react";
 import HarvestChart from "../components/HarvestChart";
+import { useAxiosAuth } from "../lib/useAxiosAuth"; // <--- IMPORTA ESTO
 
 // URL PÚBLICA
 import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
@@ -13,20 +13,24 @@ import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creast
 export default function Home() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const axiosAuth = useAxiosAuth(); // <--- INICIALIZA EL HOOK
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await axios.get(`${API_URL}/dashboard/stats`);
+        // Usa axiosAuth en lugar de axios
+        const res = await axiosAuth.get(`/dashboard/stats`); // Ya no necesitas poner la URL completa, el hook la tiene base
         setStats(res.data);
       } catch (error) {
-        console.error(error);
+        console.error("Error fetching stats:", error);
       } finally {
         setLoading(false);
       }
     };
+
+    // Solo ejecutamos si axiosAuth está listo
     fetchStats();
-  }, []);
+  }, [axiosAuth]);
 
   // Componente de Tarjeta KPI (Skeleton Loading incluido)
   const KPICard = ({ title, value, unit, icon: Icon, colorClass, trend }: any) => (

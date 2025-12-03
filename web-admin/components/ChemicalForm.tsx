@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
 import { FlaskConical, ShieldAlert, Save, Loader2 } from "lucide-react";
 import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
+import { useAxiosAuth } from "../lib/useAxiosAuth"; // <--- IMPORTA ESTO
 
 // TU URL PÚBLICA (Reemplaza si cambió)
 
@@ -20,12 +20,15 @@ export default function ChemicalForm({ onSuccess }: Props) {
     banned_markets: "",
   });
 
+    const axiosAuth = useAxiosAuth(); // <--- INICIALIZA EL HOOK
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await axios.post(`${API_URL}/chemicals`, formData);
+      await axiosAuth.post(`${API_URL}/chemicals`, formData);
       // Limpiar formulario
       setFormData({ name: "", active_ingredient: "", is_banned: false, banned_markets: "" });
       alert("✅ Químico registrado correctamente");

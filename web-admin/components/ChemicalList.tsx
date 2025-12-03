@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { AlertTriangle, CheckCircle, FlaskConical, ShieldAlert } from "lucide-react";
 import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
+import { useAxiosAuth } from "../lib/useAxiosAuth"; // <--- IMPORTA ESTO
 
 // REEMPLAZA CON TU URL REAL DE CODESPACES
 
@@ -18,11 +18,12 @@ interface Chemical {
 export default function ChemicalList() {
   const [chemicals, setChemicals] = useState<Chemical[]>([]);
   const [loading, setLoading] = useState(true);
+  const axiosAuth = useAxiosAuth(); // <--- INICIALIZA EL HOOK
 
   // Función para cargar datos
   const fetchChemicals = async () => {
     try {
-      const res = await axios.get(`${API_URL}/chemicals`);
+      const res = await axiosAuth.get(`${API_URL}/chemicals`);
       setChemicals(res.data);
     } catch (error) {
       console.error("Error cargando químicos", error);

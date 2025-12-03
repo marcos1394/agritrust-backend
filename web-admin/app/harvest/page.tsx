@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { Sprout, Box, Plus, Calendar, QrCode, RefreshCw } from "lucide-react";
 import { API_URL } from '../../utils/api'; // Ajusta la ruta según donde lo creaste
-// URL PÚBLICA
+import { useAxiosAuth } from "../../lib/useAxiosAuth"; // <--- IMPORTA ESTO
+
 
 // Interfaces
 interface Crop { id: string; name: string; variety: string; status: string; }
@@ -17,13 +17,15 @@ export default function HarvestPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [bins, setBins] = useState<Bin[]>([]); // <--- Estado para cajas
   const [loading, setLoading] = useState(true);
+  const axiosAuth = useAxiosAuth(); // <--- INICIALIZA EL HOOK
+
 
   const fetchData = async () => {
     try {
       const [cropsRes, batchesRes, binsRes] = await Promise.all([
-        axios.get(`${API_URL}/crops`),
-        axios.get(`${API_URL}/harvest-batches`),
-        axios.get(`${API_URL}/bins`), // <--- Petición nueva
+        axiosAuth.get(`${API_URL}/crops`),
+        axiosAuth.get(`${API_URL}/harvest-batches`),
+        axiosAuth.get(`${API_URL}/bins`), // <--- Petición nueva
       ]);
       setCrops(cropsRes.data);
       setBatches(batchesRes.data);
