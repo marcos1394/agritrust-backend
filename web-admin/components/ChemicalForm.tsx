@@ -3,9 +3,9 @@
 import { useState } from "react";
 import axios from "axios";
 import { FlaskConical, ShieldAlert, Save, Loader2 } from "lucide-react";
+import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
 
 // TU URL PÚBLICA (Reemplaza si cambió)
-const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
 
 interface Props {
   onSuccess: () => void; // Para avisarle a la lista que se actualice

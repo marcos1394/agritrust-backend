@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { AlertTriangle, CheckCircle, FlaskConical, ShieldAlert } from "lucide-react";
+import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
 
 // REEMPLAZA CON TU URL REAL DE CODESPACES
-const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
 
 interface Chemical {
   id: string;

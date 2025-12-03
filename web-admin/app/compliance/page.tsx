@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ChemicalForm from "../../components/ChemicalForm"; // Importamos el Formulario
 import ChemicalList from "../../components/ChemicalList"; // Importamos la Lista
+import { API_URL } from '../../utils/api'; // Ajusta la ruta según donde lo creaste
 
 export default function CompliancePage() {
   // Este estado simple servirá para forzar la recarga de la lista

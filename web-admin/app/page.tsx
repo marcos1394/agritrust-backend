@@ -8,7 +8,7 @@ import {
 import HarvestChart from "../components/HarvestChart";
 
 // URL PÚBLICA
-const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
+import { API_URL } from '../utils/api'; // Ajusta la ruta según donde lo creaste
 
 export default function Home() {
   const [stats, setStats] = useState<any>(null);

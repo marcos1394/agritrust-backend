@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Sprout, Box, Plus, Calendar, QrCode, RefreshCw } from "lucide-react";
-
+import { API_URL } from '../../utils/api'; // Ajusta la ruta según donde lo creaste
 // URL PÚBLICA
-const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
 
 // Interfaces
 interface Crop { id: string; name: string; variety: string; status: string; }
