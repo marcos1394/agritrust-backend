@@ -2,42 +2,33 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Sprout, Box, Plus, Calendar, QrCode } from "lucide-react";
+import { Sprout, Box, Plus, Calendar, QrCode, RefreshCw } from "lucide-react";
 
-// TU URL PÚBLICA DE CODESPACES
+// URL PÚBLICA
 const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
 
-// Tipos de datos
-interface Crop {
-  id: string;
-  name: string;
-  variety: string;
-  status: string;
-}
-
-interface Batch {
-  id: string;
-  batch_code: string;
-  harvest_date: string;
-  crop?: Crop; // Relación opcional
-}
+// Interfaces
+interface Crop { id: string; name: string; variety: string; status: string; }
+interface Batch { id: string; batch_code: string; harvest_date: string; crop?: Crop; }
+// Nueva Interfaz para Bins
+interface Bin { id: string; qr_code: string; weight_kg: number; status: string; updated_at: string; }
 
 export default function HarvestPage() {
   const [crops, setCrops] = useState<Crop[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [bins, setBins] = useState<Bin[]>([]); // <--- Estado para cajas
   const [loading, setLoading] = useState(true);
-
-  // Estados para formulario simple
-  const [newCropName, setNewCropName] = useState("");
 
   const fetchData = async () => {
     try {
-      const [cropsRes, batchesRes] = await Promise.all([
+      const [cropsRes, batchesRes, binsRes] = await Promise.all([
         axios.get(`${API_URL}/crops`),
         axios.get(`${API_URL}/harvest-batches`),
+        axios.get(`${API_URL}/bins`), // <--- Petición nueva
       ]);
       setCrops(cropsRes.data);
       setBatches(batchesRes.data);
+      setBins(binsRes.data);
     } catch (error) {
       console.error("Error fetching harvest data", error);
     } finally {
@@ -47,29 +38,10 @@ export default function HarvestPage() {
 
   useEffect(() => {
     fetchData();
+    // TRUCO PRO: Auto-recarga cada 10 segundos para ver datos en "Tiempo Real"
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
   }, []);
-
-  // Función rápida para crear un cultivo (Mockup funcional)
-  const handleCreateCrop = async () => {
-    if (!newCropName) return;
-    try {
-        // Usamos un ID de tenant hardcodeado temporalmente o el primero que encontremos
-        // En producción esto viene del Login
-        const fakeTenantID = "f5ac9e66-a798-4b23-ad1c-82a9875eb623"; // Reemplaza si tienes uno a la mano, si no, fallará validación estricta
-        
-        await axios.post(`${API_URL}/crops`, {
-            name: newCropName,
-            variety: "Standard",
-            status: "growing",
-            tenant_id: fakeTenantID, // Necesitamos un ID real aquí para que pase, o desactivar la validación FK
-            farm_id: fakeTenantID // Temporal
-        });
-        setNewCropName("");
-        fetchData(); // Recargar
-    } catch (e) {
-        alert("Para crear cultivos necesitas asignar un TenantID válido en el código.");
-    }
-  };
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -78,80 +50,80 @@ export default function HarvestPage() {
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
             <Box className="text-green-600" /> Centro de Cosecha
             </h1>
-            <p className="text-gray-600">Gestione cultivos y lotes de trazabilidad.</p>
+            <p className="text-gray-600">Monitoreo de flujo de fruta en tiempo real.</p>
         </div>
-        <button className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700">
-            <Plus size={18} /> Nuevo Lote
+        <button 
+          onClick={fetchData}
+          className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
+        >
+            <RefreshCw size={18} /> Actualizar Ahora
         </button>
       </header>
 
-      {/* Sección 1: Cultivos Activos */}
-      <section className="mb-10">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Sprout size={20} /> Cultivos Activos
-        </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Card para crear nuevo (Visual) */}
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 flex flex-col justify-center items-center text-gray-400 hover:border-green-500 hover:text-green-500 transition cursor-pointer group">
-                <Plus size={30} className="mb-2 group-hover:scale-110 transition" />
-                <span className="font-medium">Sembrar Nuevo</span>
-            </div>
-
-            {loading ? <p>Cargando...</p> : crops.map(crop => (
-                <div key={crop.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
-                    <div className="flex justify-between items-start mb-2">
-                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-bold">
-                            {crop.status.toUpperCase()}
-                        </span>
-                    </div>
-                    <h3 className="font-bold text-lg text-gray-800">{crop.name}</h3>
-                    <p className="text-sm text-gray-500">{crop.variety}</p>
+        {/* COLUMNA IZQUIERDA (2/3): Lotes y Cultivos */}
+        <div className="lg:col-span-2 space-y-8">
+            {/* Sección Lotes */}
+            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                        <QrCode size={18} /> Lotes Activos (Batches)
+                    </h3>
                 </div>
-            ))}
-        </div>
-      </section>
-
-      {/* Sección 2: Lotes de Cosecha (Traceability Batches) */}
-      <section>
-        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <QrCode size={20} /> Lotes de Trazabilidad
-        </h2>
-        
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <table className="w-full text-left">
-                <thead className="bg-gray-50 text-gray-500 text-sm border-b">
-                    <tr>
-                        <th className="px-6 py-3">Código de Lote</th>
-                        <th className="px-6 py-3">Cultivo Origen</th>
-                        <th className="px-6 py-3">Fecha Corte</th>
-                        <th className="px-6 py-3">Estado</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {batches.length === 0 ? (
-                        <tr><td colSpan={4} className="p-6 text-center text-gray-400">No hay lotes abiertos hoy.</td></tr>
-                    ) : batches.map(batch => (
-                        <tr key={batch.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 font-mono font-medium text-blue-600">
-                                {batch.batch_code}
-                            </td>
-                            <td className="px-6 py-4">
-                                {batch.crop?.name || "Desconocido"}
-                            </td>
-                            <td className="px-6 py-4 text-gray-500 flex items-center gap-2">
-                                <Calendar size={14} />
-                                {new Date(batch.harvest_date).toLocaleDateString()}
-                            </td>
-                            <td className="px-6 py-4">
-                                <span className="text-green-600 font-medium text-sm">Abierto</span>
-                            </td>
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-white text-gray-500 border-b">
+                        <tr>
+                            <th className="px-6 py-3">Código</th>
+                            <th className="px-6 py-3">Cultivo</th>
+                            <th className="px-6 py-3">Fecha</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {batches.map(batch => (
+                            <tr key={batch.id}>
+                                <td className="px-6 py-3 font-mono text-blue-600 font-medium">{batch.batch_code}</td>
+                                <td className="px-6 py-3">{batch.crop?.name}</td>
+                                <td className="px-6 py-3 text-gray-500">{new Date(batch.harvest_date).toLocaleDateString()}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </section>
         </div>
-      </section>
+
+        {/* COLUMNA DERECHA (1/3): FEED EN VIVO DE ESCANEO */}
+        <div className="lg:col-span-1">
+            <section className="bg-slate-900 text-white rounded-xl shadow-lg overflow-hidden h-full max-h-[600px] flex flex-col">
+                <div className="p-4 border-b border-slate-700 bg-slate-800">
+                    <h3 className="font-bold text-green-400 flex items-center gap-2 animate-pulse">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        Live Feed: Entrada de Cajas
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Últimos escaneos recibidos desde campo</p>
+                </div>
+                
+                <div className="overflow-y-auto p-4 space-y-3 flex-1">
+                    {bins.length === 0 ? (
+                        <p className="text-center text-slate-500 py-10">Esperando datos...</p>
+                    ) : bins.map(bin => (
+                        <div key={bin.id} className="bg-slate-800 p-3 rounded-lg border-l-4 border-green-500 flex justify-between items-center">
+                            <div>
+                                <p className="font-mono text-lg font-bold text-white">{bin.qr_code}</p>
+                                <p className="text-xs text-slate-400">
+                                    {new Date(bin.updated_at).toLocaleTimeString()} • {bin.weight_kg} kg
+                                </p>
+                            </div>
+                            <span className="bg-green-900 text-green-300 text-xs px-2 py-1 rounded">
+                                RECIBIDO
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </section>
+        </div>
+
+      </div>
     </div>
   );
 }

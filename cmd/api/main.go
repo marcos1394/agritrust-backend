@@ -210,6 +210,94 @@ func main() {
 		c.JSON(http.StatusOK, batches)
 	})
 
+	// LEER HISTORIAL DE APLICACIONES
+	r.GET("/applications", func(c *gin.Context) {
+		var apps []domain.ApplicationRecord
+		// Preload carga los nombres del Rancho y del Químico automáticamente
+		// OJO: Asegúrate que tus structs ApplicationRecord tengan las relaciones definidas si quieres esto
+		// Para el MVP simple, cargamos los IDs y datos crudos
+		db.Order("applied_at desc").Find(&apps)
+		c.JSON(http.StatusOK, apps)
+	})
+
+	// VER CAJAS ESCANEADAS (Inventario de Campo)
+	r.GET("/bins", func(c *gin.Context) {
+		var bins []domain.Bin
+		// Filtro opcional: ?harvest_batch_id=XXXX
+		batchID := c.Query("harvest_batch_id")
+
+		query := db.Model(&domain.Bin{})
+		if batchID != "" {
+			query = query.Where("harvest_batch_id = ?", batchID)
+		}
+
+		// Traemos las últimas 50 cajas para no saturar
+		query.Order("updated_at desc").Limit(50).Find(&bins)
+		c.JSON(http.StatusOK, bins)
+	})
+
+	r.GET("/dashboard/stats", func(c *gin.Context) {
+		// Estructura de respuesta
+		type ChartPoint struct {
+			Date  string  `json:"date"`
+			Value float64 `json:"value"`
+		}
+		
+		stats := gin.H{
+			"total_harvest_today": 0.0,
+			"active_batches":      0,
+			"security_alerts":     0,
+			"weekly_trend":        []ChartPoint{},
+		}
+
+		// 1. KPI: Total Kilos Cosechados HOY
+		// Sumamos weight_kg de la tabla 'bins' donde updated_at sea hoy
+		// Nota: En producción usaríamos rangos de fecha precisos con time.Location
+		var totalWeight float64
+		db.Model(&domain.Bin{}).
+			Where("DATE(updated_at) = CURRENT_DATE"). // Postgres function
+			Select("COALESCE(SUM(weight_kg), 0)").
+			Scan(&totalWeight)
+		stats["total_harvest_today"] = totalWeight
+
+		// 2. KPI: Lotes Activos
+		var activeBatches int64
+		// Asumimos que un lote de hoy es activo
+		db.Model(&domain.HarvestBatch{}).Where("DATE(harvest_date) = CURRENT_DATE").Count(&activeBatches)
+		stats["active_batches"] = activeBatches
+
+		// 3. KPI: Intentos de Aplicación Bloqueados (Alertas)
+		// Como no guardamos los bloqueados en la DB (solo respondimos error), 
+		// contaremos las aplicaciones exitosas por ahora. 
+		// *Mejora futura: Guardar logs de intentos fallidos.*
+		var appsToday int64
+		db.Model(&domain.ApplicationRecord{}).Where("DATE(applied_at) = CURRENT_DATE").Count(&appsToday)
+		stats["security_alerts"] = 0 // Placeholder hasta implementar tabla de logs de seguridad
+
+		// 4. GRÁFICO: Tendencia de los últimos 7 días
+		// Query SQL nativa para agrupar por día
+		rows, err := db.Raw(`
+			SELECT TO_CHAR(updated_at, 'YYYY-MM-DD') as date, SUM(weight_kg) as value
+			FROM bins
+			WHERE updated_at >= CURRENT_DATE - INTERVAL '7 days'
+			GROUP BY date
+			ORDER BY date ASC
+		`).Rows()
+		
+		if err == nil {
+			defer rows.Close()
+			var trend []ChartPoint
+			for rows.Next() {
+				var p ChartPoint
+				rows.Scan(&p.Date, &p.Value)
+				trend = append(trend, p)
+			}
+			stats["weekly_trend"] = trend
+		}
+
+		c.JSON(http.StatusOK, stats)
+	})
+
 	// Escanear Bin (Asignar caja a lote)
 	r.POST("/bins/scan", func(c *gin.Context) {
 		// Estructura temporal para recibir el JSON

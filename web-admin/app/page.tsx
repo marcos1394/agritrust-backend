@@ -2,88 +2,142 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Building2, MapPin } from "lucide-react";
+import { 
+  Scale, AlertTriangle, Tractor, TrendingUp, ArrowUpRight 
+} from "lucide-react";
+import HarvestChart from "../components/HarvestChart";
 
-// Tu URL REAL del backend (la que me pasaste)
+// URL PÚBLICA
 const API_URL = "https://improved-funicular-gpxx6vqj47whpwr9-8080.app.github.dev";
 
-interface Tenant {
-  id: string;
-  name: string;
-  rfc: string;
-  plan: string;
-}
-
 export default function Home() {
-  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchStats = async () => {
       try {
-        console.log("Intentando conectar a:", API_URL + "/tenants");
-        // Agregamos headers explícitos para evitar bloqueos simples
-        const response = await axios.get(`${API_URL}/tenants`, {
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
-        console.log("Respuesta recibida:", response.data);
-        setTenants(response.data);
-      } catch (err: any) {
-        console.error("Error Axios completo:", err);
-        setError(`Error: ${err.message}`);
+        const res = await axios.get(`${API_URL}/dashboard/stats`);
+        setStats(res.data);
+      } catch (error) {
+        console.error(error);
       } finally {
         setLoading(false);
       }
     };
-
-    fetchData();
+    fetchStats();
   }, []);
 
+  // Componente de Tarjeta KPI (Skeleton Loading incluido)
+  const KPICard = ({ title, value, unit, icon: Icon, colorClass, trend }: any) => (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colorClass} bg-opacity-10`}>
+          <Icon className={colorClass.replace('bg-', 'text-')} size={24} />
+        </div>
+        {trend && (
+          <span className="flex items-center text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <ArrowUpRight size={12} className="mr-1" /> {trend}
+          </span>
+        )}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
+        {loading ? (
+          <div className="h-8 w-24 bg-gray-200 rounded animate-pulse"></div>
+        ) : (
+          <h3 className="text-3xl font-bold text-gray-800">
+            {value} <span className="text-sm font-normal text-gray-400">{unit}</span>
+          </h3>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="p-8">
-      <header className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-800">Panel General</h2>
-        <p className="text-gray-500">Bienvenido, Marcos.</p>
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      
+      {/* HEADER DE BIENVENIDA */}
+      <header>
+        <h1 className="text-3xl font-bold text-slate-800">Cuadro de Mando</h1>
+        <p className="text-slate-500 mt-1">Visión general de la operación agrícola hoy.</p>
       </header>
 
-      {/* Si hay error, mostrarlo en rojo */}
-      {error && (
-        <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg border border-red-200">
-           🚨 {error} <br/>
-           <span className="text-xs">Revisa la consola (F12) para más detalles.</span>
-        </div>
-      )}
+      {/* 1. GRID DE KPIS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <KPICard 
+          title="Producción Hoy" 
+          value={stats?.total_harvest_today || 0} 
+          unit="kg"
+          icon={Scale}
+          colorClass="bg-emerald-500 text-emerald-500"
+          trend="+12% vs ayer"
+        />
+        <KPICard 
+          title="Lotes Activos" 
+          value={stats?.active_batches || 0} 
+          unit="zonas"
+          icon={Tractor}
+          colorClass="bg-blue-500 text-blue-500"
+        />
+        <KPICard 
+          title="Alertas Fitosanitarias" 
+          value={stats?.security_alerts || 0} 
+          unit="incidentes"
+          icon={AlertTriangle}
+          colorClass="bg-amber-500 text-amber-500"
+        />
+      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="font-semibold text-gray-800">Mis Empresas (Tenants)</h3>
+      {/* 2. SECCIÓN PRINCIPAL: GRÁFICO */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Gráfico de Tendencia (Ocupa 2 columnas) */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+              <TrendingUp size={20} className="text-emerald-500" />
+              Tendencia de Cosecha (7 Días)
+            </h3>
+            <select className="text-sm border-gray-200 rounded-lg text-gray-500 p-1 bg-gray-50">
+                <option>Esta Semana</option>
+                <option>Este Mes</option>
+            </select>
+          </div>
+          
+          {loading ? (
+             <div className="h-[300px] w-full bg-gray-100 rounded animate-pulse"></div>
+          ) : (
+             <HarvestChart data={stats?.weekly_trend} />
+          )}
         </div>
-        
-        {loading ? (
-          <div className="p-8 text-center text-gray-500">Cargando...</div>
-        ) : (
-          <table className="w-full text-left">
-            <thead className="bg-white text-gray-500 text-sm border-b">
-              <tr>
-                <th className="px-6 py-3 font-medium">Nombre</th>
-                <th className="px-6 py-3 font-medium">RFC</th>
-                <th className="px-6 py-3 font-medium">Plan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {tenants.map((tenant) => (
-                <tr key={tenant.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{tenant.name}</td>
-                  <td className="px-6 py-4 text-gray-600">{tenant.rfc}</td>
-                  <td className="px-6 py-4 text-blue-600">{tenant.plan}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+
+        {/* Panel Lateral: Accesos Rápidos (UX) */}
+        <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg flex flex-col justify-between">
+            <div>
+                <h3 className="font-bold text-xl mb-2">Acciones Rápidas</h3>
+                <p className="text-slate-400 text-sm mb-6">Accesos directos a las funciones más usadas por los gerentes.</p>
+                
+                <div className="space-y-3">
+                    <button className="w-full bg-slate-800 hover:bg-slate-700 p-3 rounded-xl text-left flex items-center gap-3 transition">
+                        <div className="w-2 h-2 bg-green-400 rounded-full"></div> Abrir Nuevo Lote
+                    </button>
+                    <button className="w-full bg-slate-800 hover:bg-slate-700 p-3 rounded-xl text-left flex items-center gap-3 transition">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full"></div> Auditoría de Químicos
+                    </button>
+                    <button className="w-full bg-slate-800 hover:bg-slate-700 p-3 rounded-xl text-left flex items-center gap-3 transition">
+                        <div className="w-2 h-2 bg-red-400 rounded-full"></div> Reportar Incidente
+                    </button>
+                </div>
+            </div>
+            
+            <div className="mt-8 pt-6 border-t border-slate-700">
+                <p className="text-xs text-slate-500 uppercase font-bold mb-2">Estado del Sistema</p>
+                <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
+                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                    Todos los servicios operativos
+                </div>
+            </div>
+        </div>
       </div>
     </div>
   );
