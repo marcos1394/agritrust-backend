@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/Marcos1394/agritrust-backend/internal/domain"
+	"github.com/Marcos1394/agritrust-backend/internal/middleware" // <--- Importa esto
 	"github.com/Marcos1394/agritrust-backend/pkg/database"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -34,23 +36,24 @@ func main() {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
 	}
 
-	// Inicializar Framework Gin
 	r := gin.Default()
 
-	// Middleware básico de CORS (Permitir todo para desarrollo)
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+	// === CONFIGURACIÓN CORS (Ya la tienes) ===
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowAllOrigins = true
+	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization", "Accept"}
+	r.Use(cors.New(corsConfig))
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
+	// ---------------------------------------------------------
+	// 🔒 ACTIVAR SEGURIDAD (MIDDLEWARE CLERK)
+	// ---------------------------------------------------------
+	// A partir de esta línea, CUALQUIER ruta de abajo exigirá Token
+	r.Use(middleware.AuthMiddleware())
 
-		c.Next()
-	})
+	// ---------------------------------------------------------
+	// RUTAS PROTEGIDAS (Tus endpoints de negocio)
+	// ---------------------------------------------------------
 
 	// ---------------------------------------------------------
 	// 2. ENDPOINTS: SETUP Y ADMINISTRACIÓN
@@ -242,7 +245,7 @@ func main() {
 			Date  string  `json:"date"`
 			Value float64 `json:"value"`
 		}
-		
+
 		stats := gin.H{
 			"total_harvest_today": 0.0,
 			"active_batches":      0,
@@ -267,8 +270,8 @@ func main() {
 		stats["active_batches"] = activeBatches
 
 		// 3. KPI: Intentos de Aplicación Bloqueados (Alertas)
-		// Como no guardamos los bloqueados en la DB (solo respondimos error), 
-		// contaremos las aplicaciones exitosas por ahora. 
+		// Como no guardamos los bloqueados en la DB (solo respondimos error),
+		// contaremos las aplicaciones exitosas por ahora.
 		// *Mejora futura: Guardar logs de intentos fallidos.*
 		var appsToday int64
 		db.Model(&domain.ApplicationRecord{}).Where("DATE(applied_at) = CURRENT_DATE").Count(&appsToday)
@@ -283,7 +286,7 @@ func main() {
 			GROUP BY date
 			ORDER BY date ASC
 		`).Rows()
-		
+
 		if err == nil {
 			defer rows.Close()
 			var trend []ChartPoint
