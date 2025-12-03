@@ -1,0 +1,358 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/Marcos1394/agritrust-backend/internal/domain"
+	"github.com/Marcos1394/agritrust-backend/pkg/database"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+func main() {
+	// ---------------------------------------------------------
+	// 1. INICIALIZACIÓN Y BASE DE DATOS
+	// ---------------------------------------------------------
+	db := database.Connect()
+
+	// Migración Automática: Crea todas las tablas en orden correcto
+	err := db.AutoMigrate(
+		&domain.Tenant{},
+		&domain.Farm{},
+		&domain.User{},
+		&domain.Chemical{},
+		&domain.ApplicationRecord{},
+		&domain.Crop{},
+		&domain.HarvestBatch{},
+		&domain.Shipment{}, // <--- MOVIMOS ESTO ARRIBA (Antes de Bin)
+		&domain.Bin{},      // <--- Bin depende de Shipment, así que va después
+		&domain.Claim{},
+	)
+	if err != nil {
+		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
+	}
+
+	// Inicializar Framework Gin
+	r := gin.Default()
+
+	// Middleware básico de CORS (Permitir todo para desarrollo)
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
+
+	// ---------------------------------------------------------
+	// 2. ENDPOINTS: SETUP Y ADMINISTRACIÓN
+	// ---------------------------------------------------------
+
+	// Health Check
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "online", "system": "AgriTrust Backend"})
+	})
+
+	// Crear Empresa (Tenant)
+	r.POST("/tenants", func(c *gin.Context) {
+		var newTenant domain.Tenant
+		if err := c.ShouldBindJSON(&newTenant); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		db.Create(&newTenant)
+		c.JSON(http.StatusCreated, newTenant)
+	})
+
+	// Listar Empresas
+	r.GET("/tenants", func(c *gin.Context) {
+		var tenants []domain.Tenant
+		db.Find(&tenants)
+		c.JSON(http.StatusOK, tenants)
+	})
+
+	// Crear Rancho (Farm)
+	r.POST("/farms", func(c *gin.Context) {
+		var newFarm domain.Farm
+		if err := c.ShouldBindJSON(&newFarm); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// Validar que el Tenant existe
+		var count int64
+		db.Model(&domain.Tenant{}).Where("id = ?", newFarm.TenantID).Count(&count)
+		if count == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "El TenantID especificado no existe"})
+			return
+		}
+		db.Create(&newFarm)
+		c.JSON(http.StatusCreated, newFarm)
+	})
+
+	// Listar Ranchos por Tenant
+	r.GET("/farms", func(c *gin.Context) {
+		tenantID := c.Query("tenant_id")
+		if tenantID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant_id es requerido"})
+			return
+		}
+		var farms []domain.Farm
+		db.Where("tenant_id = ?", tenantID).Find(&farms)
+		c.JSON(http.StatusOK, farms)
+	})
+
+	// ---------------------------------------------------------
+	// 3. MÓDULO DE COMPLIANCE (FITOSANIDAD)
+	// ---------------------------------------------------------
+
+	// Crear Químico en Catálogo
+	r.POST("/chemicals", func(c *gin.Context) {
+		var chem domain.Chemical
+		if err := c.ShouldBindJSON(&chem); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		db.Create(&chem)
+		c.JSON(http.StatusCreated, chem)
+	})
+
+	r.GET("/chemicals", func(c *gin.Context) {
+		var chems []domain.Chemical
+		db.Find(&chems)
+		c.JSON(http.StatusOK, chems)
+	})
+
+	// Registrar Aplicación (El Escudo de Seguridad)
+	r.POST("/applications", func(c *gin.Context) {
+		var app domain.ApplicationRecord
+		if err := c.ShouldBindJSON(&app); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// VALIDACIÓN: Verificar si el químico está prohibido
+		var chem domain.Chemical
+		if err := db.First(&chem, "id = ?", app.ChemicalID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Químico no encontrado"})
+			return
+		}
+
+		if chem.IsBanned {
+			// BLOQUEO AUTOMÁTICO
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "ALERTA CRÍTICA: Intento de aplicar producto prohibido",
+				"details": "Producto " + chem.Name + " prohibido en: " + chem.BannedMarkets,
+				"status":  "BLOCKED",
+			})
+			return
+		}
+
+		// Si es válido, aprobar y guardar
+		app.AppliedAt = time.Now()
+		app.Status = "approved"
+		db.Create(&app)
+
+		c.JSON(http.StatusCreated, gin.H{"message": "Aplicación registrada", "data": app})
+	})
+
+	// ---------------------------------------------------------
+	// 4. MÓDULO DE TRAZABILIDAD (COSECHA)
+	// ---------------------------------------------------------
+
+	// Crear Cultivo (Crop)
+	r.POST("/crops", func(c *gin.Context) {
+		var crop domain.Crop
+		if err := c.ShouldBindJSON(&crop); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		db.Create(&crop)
+		c.JSON(http.StatusCreated, crop)
+	})
+
+	// --- NUEVO: LEER CULTIVOS ---
+	r.GET("/crops", func(c *gin.Context) {
+		var crops []domain.Crop
+		db.Find(&crops)
+		c.JSON(http.StatusOK, crops)
+	})
+
+	// Iniciar Lote de Cosecha (Harvest Batch)
+	r.POST("/harvest-batches", func(c *gin.Context) {
+		var batch domain.HarvestBatch
+		if err := c.ShouldBindJSON(&batch); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		// Generar código de lote si no viene
+		if batch.BatchCode == "" {
+			batch.BatchCode = fmt.Sprintf("LOTE-%d", time.Now().Unix())
+		}
+		batch.HarvestDate = time.Now()
+
+		db.Create(&batch)
+		c.JSON(http.StatusCreated, batch)
+	})
+
+	// --- NUEVO: LEER LOTES DE COSECHA ---
+	r.GET("/harvest-batches", func(c *gin.Context) {
+		var batches []domain.HarvestBatch
+		// Preload carga los datos del Crop relacionado (Join automático)
+		db.Preload("Crop").Find(&batches)
+		c.JSON(http.StatusOK, batches)
+	})
+
+	// Escanear Bin (Asignar caja a lote)
+	r.POST("/bins/scan", func(c *gin.Context) {
+		// Estructura temporal para recibir el JSON
+		type ScanRequest struct {
+			QRCode         string  `json:"qr_code"`
+			HarvestBatchID string  `json:"harvest_batch_id"`
+			Weight         float64 `json:"weight"`
+			TenantID       string  `json:"tenant_id"`
+		}
+		var req ScanRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Parsear UUIDs de string
+		tenantUUID, err := uuid.Parse(req.TenantID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "TenantID inválido"})
+			return
+		}
+
+		// Buscar si el Bin ya existe (por su QR y Tenant), si no, inicializar estructura vacía
+		var bin domain.Bin
+		result := db.Where("qr_code = ? AND tenant_id = ?", req.QRCode, tenantUUID).First(&bin)
+
+		if result.Error != nil {
+			// Si no existe, preparamos uno nuevo
+			bin.TenantID = tenantUUID
+			bin.QRCode = req.QRCode
+			// GORM creará el ID automáticamente en el BeforeCreate
+		}
+
+		// Actualizar datos del Bin con la información del escaneo
+		// Convertir string batchID a UUID si es necesario o guardar directo
+		batchUUID, _ := uuid.Parse(req.HarvestBatchID) // Ignoramos error por brevedad, asumimos válido
+
+		// Usamos un mapa para forzar la actualización incluso si los campos no cambian
+		updateData := map[string]interface{}{
+			"harvest_batch_id": batchUUID,
+			"weight_kg":        req.Weight,
+			"status":           "full_in_field",
+			"updated_at":       time.Now(),
+		}
+
+		// Guardar o Actualizar
+		if bin.ID == uuid.Nil {
+			// Es nuevo, asignamos datos y creamos
+			bin.HarvestBatchID = &batchUUID
+			bin.WeightKg = req.Weight
+			bin.Status = "full_in_field"
+			db.Create(&bin)
+		} else {
+			// Ya existe, actualizamos
+			db.Model(&bin).Updates(updateData)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Bin vinculado exitosamente",
+			"bin_id":  bin.ID,
+			"qr":      bin.QRCode,
+			"status":  "full_in_field",
+		})
+	})
+
+	// ---------------------------------------------------------
+	// 5. MÓDULO LOGÍSTICA Y RECLAMACIONES (DEFENSA)
+	// ---------------------------------------------------------
+
+	// Crear Embarque (Salida de Camión)
+	r.POST("/shipments", func(c *gin.Context) {
+		type ShipmentRequest struct {
+			TenantID     string   `json:"tenant_id"`
+			CustomerName string   `json:"customer_name"`
+			BinIDs       []string `json:"bin_ids"` // Lista de IDs de cajas que se van
+		}
+		var req ShipmentRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 1. Crear el Header del Embarque
+		shipment := domain.Shipment{
+			TenantID:      uuid.MustParse(req.TenantID), // Asumimos UUID válido para rapidez
+			CustomerName:  req.CustomerName,
+			Status:        "shipped",
+			DepartureTime: time.Now(),
+		}
+
+		tx := db.Begin() // Iniciamos Transacción (Todo o nada)
+
+		if err := tx.Create(&shipment).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 2. Actualizar los Bins para decir que están en este camión
+		for _, binIDStr := range req.BinIDs {
+			binUUID, _ := uuid.Parse(binIDStr)
+			// Actualizamos shipment_id y status
+			if err := tx.Model(&domain.Bin{}).Where("id = ?", binUUID).Updates(map[string]interface{}{
+				"shipment_id": shipment.ID,
+				"status":      "shipped",
+			}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error actualizando bins"})
+				return
+			}
+		}
+
+		tx.Commit()
+		c.JSON(http.StatusCreated, gin.H{"message": "Embarque creado", "shipment_id": shipment.ID})
+	})
+
+	// Registrar Reclamación (El Cliente se queja)
+	r.POST("/claims", func(c *gin.Context) {
+		var claim domain.Claim
+		if err := c.ShouldBindJSON(&claim); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Lógica de Negocio: Alertar si el monto es alto
+		claim.Status = "open"
+		db.Create(&claim)
+
+		// Simulación de Alerta Inteligente
+		alertMessage := "Reclamo registrado."
+		if claim.AmountUSD > 5000 {
+			alertMessage = "⚠️ ALERTA: Reclamo de alto valor. Se requiere auditoría inmediata."
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message": alertMessage,
+			"claim":   claim,
+		})
+	})
+
+	// ---------------------------------------------------------
+	// ARRANQUE DEL SERVIDOR
+	// ---------------------------------------------------------
+	fmt.Println("🚀 AgriTrust Backend corriendo en puerto 8080")
+	r.Run(":8080")
+}
