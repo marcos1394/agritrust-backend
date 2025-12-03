@@ -1,6 +1,6 @@
 module github.com/Marcos1394/agritrust-backend
 
-go 1.25.4
+go 1.25.0
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
