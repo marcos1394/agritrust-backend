@@ -77,8 +77,13 @@ export default function PassportPage() {
             
             {/* Mapa Miniatura (Reutilizamos tu componente) */}
             <div className="h-48 rounded-xl overflow-hidden border border-gray-200">
-                <FarmMap 
-                    farms={[{ id: "1", name: data.origin, location: data.location }]} 
+               <FarmMap 
+                    farms={[{ 
+                        id: "1", 
+                        name: data.origin, 
+                        location: data.location,
+                        ownership_type: "own" // <--- AGREGAR ESTA LÍNEA PARA CORREGIR EL ERROR
+                    }]} 
                     interactive={false}
                 />
             </div>

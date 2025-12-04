@@ -158,11 +158,15 @@ func main() {
 		protected.GET("/farms", func(c *gin.Context) {
 			tenantID := c.Query("tenant_id")
 			var farms []domain.Farm
+			
+			// Si el cliente filtra por tenant, aplicamos el filtro
 			if tenantID != "" {
 				db.Where("tenant_id = ?", tenantID).Find(&farms)
 			} else {
+				// Si no, traemos todo (aquí podrías filtrar por usuario si quisieras ser estricto)
 				db.Find(&farms)
 			}
+			
 			c.JSON(http.StatusOK, farms)
 		})
 
