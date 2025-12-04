@@ -2,27 +2,38 @@
 
 import { Inter } from "next/font/google";
 import "./globals.css";
+import Link from "next/link"; // Usamos Link para navegación optimizada
 import { 
   ClerkProvider, 
-  SignInButton, 
   SignedIn, 
   SignedOut, 
   UserButton 
 } from '@clerk/nextjs';
-import { useUserRole } from "../lib/useUserRole"; // <--- Hook Nuevo
-import { LayoutDashboard, Leaf, Truck, AlertTriangle, Map as MapIcon, Users, ShieldAlert, Printer, Settings } from "lucide-react";
+import { useUserRole } from "../lib/useUserRole"; 
+import { 
+  LayoutDashboard, 
+  Leaf, 
+  Truck, 
+  AlertTriangle, 
+  Map as MapIcon, 
+  Users, 
+  ShieldAlert, 
+  Printer, 
+  Settings 
+} from "lucide-react";
 
 const inter = Inter({ subsets: ["latin"] });
 
 // Componente Protector: Solo renderiza a los hijos si eres ADMIN
+// Si eres 'operator', te muestra la pantalla de bloqueo.
 function AdminProtector({ children }: { children: React.ReactNode }) {
   const { role, loading, isAdmin } = useUserRole();
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center">Cargando permisos...</div>;
+    return <div className="h-screen flex items-center justify-center text-slate-500">Cargando permisos...</div>;
   }
 
-  // SI NO ES ADMIN -> BLOQUEO TOTAL
+  // SI NO ES ADMIN -> BLOQUEO TOTAL (Para operadores que intentan entrar a la web)
   if (!isAdmin) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-8 text-center">
@@ -58,64 +69,60 @@ export default function RootLayout({
       <html lang="es">
         <body className={inter.className}>
           
-          {/* 1. SI NO ESTÁ LOGUEADO -> PANTALLA DE LOGIN */}
+          {/* ESCENARIO A: USUARIO NO LOGUEADO (Público) */}
+          {/* Aquí mostramos 'children' directamente, que renderizará la Landing Page definida en page.tsx */}
           <SignedOut>
-            <div className="flex h-screen w-screen items-center justify-center bg-gray-100 flex-col gap-6">
-              <h1 className="text-3xl font-bold text-slate-800">Bienvenido a AgriTrust</h1>
-              <div className="bg-white p-8 rounded-xl shadow-lg text-center">
-                <p className="mb-4 text-gray-500">Inicia sesión para acceder al panel</p>
-                <SignInButton mode="modal">
-                  <button className="bg-slate-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-slate-800 transition">
-                    Entrar al Sistema
-                  </button>
-                </SignInButton>
-              </div>
-            </div>
+             {children}
           </SignedOut>
 
-          {/* 2. SI ESTÁ LOGUEADO -> VERIFICAMOS ROL */}
+          {/* ESCENARIO B: USUARIO LOGUEADO (Privado) */}
+          {/* Aquí mostramos el Layout con Sidebar y protegemos con AdminProtector */}
           <SignedIn>
             <AdminProtector>
               <div className="flex h-screen bg-gray-100">
                 
-                {/* SIDEBAR */}
+                {/* SIDEBAR DE NAVEGACIÓN */}
                 <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
                   <div className="p-6">
                     <h1 className="text-2xl font-bold text-green-400">AgriTrust</h1>
                     <p className="text-xs text-gray-400">Enterprise Edition</p>
                   </div>
                   
-                  <nav className="flex-1 px-4 space-y-2">
-                    <a href="/" className="flex items-center gap-3 px-4 py-3 bg-slate-800 rounded-lg text-white">
+                  <nav className="flex-1 px-4 space-y-2 overflow-y-auto pb-4">
+                    <Link href="/" className="flex items-center gap-3 px-4 py-3 bg-slate-800 rounded-lg text-white hover:bg-slate-700 transition">
                       <LayoutDashboard size={20} /> Dashboard
-                    </a>
-                    <a href="/farms" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                    </Link>
+                    <Link href="/farms" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
                       <MapIcon size={20} /> Mis Ranchos
-                    </a>
-                    <a href="/harvest" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                    </Link>
+                    <Link href="/harvest" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
                       <Leaf size={20} /> Cosecha
-                    </a>
-                    <a href="/compliance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                    </Link>
+                    <Link href="/compliance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
                       <AlertTriangle size={20} /> Compliance
-                    </a>
-                    <a href="/team" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-  <Users size={20} /> Equipo
-</a>
-<a href="/shipments" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-  <Truck size={20} /> Logística
-</a>
-<a href="/claims" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-  <ShieldAlert size={20} /> Reclamos
-</a>
-<a href="/tools" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-  <Printer size={20} /> Herramientas
-</a>
-<a href="/settings" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition mt-auto">
-  <Settings size={20} /> Configuración
-</a>
+                    </Link>
+                    <Link href="/team" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                      <Users size={20} /> Equipo
+                    </Link>
+                    <Link href="/shipments" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                      <Truck size={20} /> Logística
+                    </Link>
+                    <Link href="/claims" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                      <ShieldAlert size={20} /> Reclamos
+                    </Link>
+                    <Link href="/tools" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                      <Printer size={20} /> Herramientas
+                    </Link>
+                    
+                    <div className="pt-4 mt-auto">
+                        <Link href="/settings" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+                        <Settings size={20} /> Configuración
+                        </Link>
+                    </div>
                   </nav>
 
-                  <div className="p-4 border-t border-slate-800 flex items-center gap-3">
+                  {/* PERFIL DE USUARIO */}
+                  <div className="p-4 border-t border-slate-800 flex items-center gap-3 bg-slate-900">
                     <UserButton showName={true} />
                     <div className="flex flex-col">
                        <span className="text-xs font-bold text-white">Mi Cuenta</span>
@@ -124,7 +131,7 @@ export default function RootLayout({
                   </div>
                 </aside>
 
-                {/* CONTENIDO PRINCIPAL */}
+                {/* CONTENIDO PRINCIPAL (Dashboard) */}
                 <main className="flex-1 overflow-y-auto bg-gray-50">
                   {children}
                 </main>

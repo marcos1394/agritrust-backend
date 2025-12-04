@@ -2,7 +2,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Definimos qué rutas son públicas (Login y Registro)
 const isPublicRoute = createRouteMatcher(['/sign-in(.*)', '/sign-up(.*)',
-  '/verify(.*)' 
+  '/verify(.*)', '/'
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
