@@ -400,15 +400,27 @@ func main() {
 			c.JSON(http.StatusCreated, batch)
 		})
 
-		// Ver lista completa de Bins (Administración)
+		// Listar Bins con Filtros Inteligentes
 		adminOnly.GET("/bins", func(c *gin.Context) {
 			var bins []domain.Bin
-			batchID := c.Query("harvest_batch_id")
+
+			// Preparar Query
 			query := db.Model(&domain.Bin{})
-			if batchID != "" {
+
+			// 1. Filtro por Lote (Opcional)
+			if batchID := c.Query("harvest_batch_id"); batchID != "" {
 				query = query.Where("harvest_batch_id = ?", batchID)
 			}
-			query.Order("updated_at desc").Limit(50).Find(&bins)
+
+			// 2. Filtro por Estatus (Vital para Logística)
+			// Ejemplo: ?status=full_in_field (Dame inventario disponible)
+			if status := c.Query("status"); status != "" {
+				query = query.Where("status = ?", status)
+			}
+
+			// Ejecutar (Quitamos el límite de 50 si es para embarque, o lo subimos a 1000)
+			query.Order("updated_at desc").Limit(1000).Find(&bins)
+
 			c.JSON(http.StatusOK, bins)
 		})
 
