@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert, Modal, Vibration, Dimensions } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
-import axios from 'axios';
 import { API_URL } from '../constants/config'; // Importación corregida
-
+import { useAuthenticatedAxios } from '../constants/AuthenticatedAxios';
 interface Batch { id: string; batch_code: string; tenant_id: string; crop?: { name: string }; }
 
 export default function HarvestScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
-  
+  const axiosAuth = useAuthenticatedAxios(); // <--- NUEVO
   // Datos
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
@@ -27,7 +26,7 @@ export default function HarvestScreen() {
 
   const loadBatches = async () => {
     try {
-      const res = await axios.get(`${API_URL}/harvest-batches`);
+      const res = await axiosAuth.get(`${API_URL}/harvest-batches`);
       setBatches(res.data);
     } catch (error) {
       Alert.alert("Error", "No se pudieron cargar los lotes. Verifica el backend.");
@@ -53,7 +52,7 @@ export default function HarvestScreen() {
         tenant_id: selectedBatch.tenant_id
       };
 
-      await axios.post(`${API_URL}/bins/scan`, payload);
+      await axiosAuth.post(`${API_URL}/bins/scan`, payload);
       
       Alert.alert("📦 Caja Registrada", `QR: ${data}\nLote: ${selectedBatch.batch_code}`, [
         { text: 'OK', onPress: () => setScanned(false) }

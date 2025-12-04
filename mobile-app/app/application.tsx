@@ -3,8 +3,8 @@ import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, 
   Alert, ScrollView, Modal, ActivityIndicator 
 } from 'react-native';
-import axios from 'axios';
 import { API_URL } from '../constants/config'; // Importación corregida
+import { useAuthenticatedAxios } from '../constants/AuthenticatedAxios';
 
 // Definimos interfaces básicas para TypeScript (opcional pero recomendado)
 interface Farm { id: string; name: string; tenant_id: string; }
@@ -13,6 +13,8 @@ interface Chemical { id: string; name: string; active_ingredient: string; is_ban
 export default function ApplicationScreen() {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const axiosAuth = useAuthenticatedAxios(); // <--- NUEVO
+  
   
   // Datos del Backend
   const [farms, setFarms] = useState<Farm[]>([]);
@@ -35,14 +37,14 @@ export default function ApplicationScreen() {
   const loadCatalogs = async () => {
     try {
       // 1. Cargar Químicos
-      const chemRes = await axios.get(`${API_URL}/chemicals`);
+      const chemRes = await axiosAuth.get(`${API_URL}/chemicals`);
       setChemicals(chemRes.data);
 
       // 2. Cargar Ranchos (Truco: Pedimos tenants primero para obtener un ID válido)
-      const tenantRes = await axios.get(`${API_URL}/tenants`);
+      const tenantRes = await axiosAuth.get(`${API_URL}/tenants`);
       if (tenantRes.data.length > 0) {
         const myTenant = tenantRes.data[0]; 
-        const farmRes = await axios.get(`${API_URL}/farms?tenant_id=${myTenant.id}`);
+        const farmRes = await axiosAuth.get(`${API_URL}/farms?tenant_id=${myTenant.id}`);
         setFarms(farmRes.data);
       }
     } catch (error) {
@@ -70,7 +72,7 @@ export default function ApplicationScreen() {
         unit: "Litros"
       };
 
-      await axios.post(`${API_URL}/applications`, payload);
+      await axiosAuth.post(`${API_URL}/applications`, payload);
 
       Alert.alert("✅ Registro Exitoso", "La aplicación se guardó en la bitácora.");
       setDosage('');
