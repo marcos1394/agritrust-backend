@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/Marcos1394/agritrust-backend/internal/domain"
-	"github.com/Marcos1394/agritrust-backend/pkg/mailer" // <--- AGREGAR ESTO
 	"github.com/Marcos1394/agritrust-backend/internal/middleware"
 	"github.com/Marcos1394/agritrust-backend/pkg/database"
+	"github.com/Marcos1394/agritrust-backend/pkg/mailer" // <--- AGREGAR ESTO
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
 )
 
 // Middleware auxiliar para bloquear acceso si no es ADMIN
@@ -230,29 +229,29 @@ func main() {
 				return
 			}
 			// ... dentro de POST /applications
-		if chem.IsBanned {
-			// 1. Obtener datos para el reporte
-			var farm domain.Farm
-			db.First(&farm, "id = ?", app.FarmID)
-			userID := c.GetString("clerk_user_id") // ID del usuario que intentó la acción
+			if chem.IsBanned {
+				// 1. Obtener datos para el reporte
+				var farm domain.Farm
+				db.First(&farm, "id = ?", app.FarmID)
+				userID := c.GetString("clerk_user_id") // ID del usuario que intentó la acción
 
-			// 2. ENVIAR ALERTA POR CORREO (En segundo plano con goroutine)
-			go func() {
-				// En un caso real, buscaríamos el email del dueño de la empresa (Tenant Owner)
-				// Para este MVP, envía la alerta a TU correo fijo para que veas que funciona
-				adminEmail := "marcos@kinetis.org" // <--- CAMBIA ESTO A TU CORREO REAL DONDE QUIERES RECIBIR ALERTAS
-				
-				htmlBody := mailer.GetSecurityAlertTemplate(farm.Name, chem.Name, userID)
-				mailer.SendEmail([]string{adminEmail}, "⛔ ALERTA CRÍTICA: Bloqueo Fitosanitario", htmlBody)
-			}()
+				// 2. ENVIAR ALERTA POR CORREO (En segundo plano con goroutine)
+				go func() {
+					// En un caso real, buscaríamos el email del dueño de la empresa (Tenant Owner)
+					// Para este MVP, envía la alerta a TU correo fijo para que veas que funciona
+					adminEmail := "marcos@kinetis.org" // <--- CAMBIA ESTO A TU CORREO REAL DONDE QUIERES RECIBIR ALERTAS
 
-			c.JSON(http.StatusForbidden, gin.H{
-				"error":   "ALERTA CRÍTICA: Intento de aplicar producto prohibido",
-				"details": "Producto " + chem.Name + " prohibido en: " + chem.BannedMarkets,
-				"status":  "BLOCKED",
-			})
-			return
-		}
+					htmlBody := mailer.GetSecurityAlertTemplate(farm.Name, chem.Name, userID)
+					mailer.SendEmail([]string{adminEmail}, "⛔ ALERTA CRÍTICA: Bloqueo Fitosanitario", htmlBody)
+				}()
+
+				c.JSON(http.StatusForbidden, gin.H{
+					"error":   "ALERTA CRÍTICA: Intento de aplicar producto prohibido",
+					"details": "Producto " + chem.Name + " prohibido en: " + chem.BannedMarkets,
+					"status":  "BLOCKED",
+				})
+				return
+			}
 			app.AppliedAt = time.Now()
 			app.Status = "approved"
 			db.Create(&app)
@@ -429,6 +428,37 @@ func main() {
 				return
 			}
 			c.JSON(http.StatusCreated, newTenant)
+		})
+
+		// Editar Datos de la Empresa
+		adminOnly.PUT("/tenants", func(c *gin.Context) {
+			clerkUserID := c.GetString("clerk_user_id")
+
+			// 1. Estructura de lo que se puede editar (DTO)
+			type UpdateTenantReq struct {
+				Name string `json:"name"`
+				RFC  string `json:"rfc"`
+			}
+			var req UpdateTenantReq
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 2. Buscar la empresa del usuario
+			var tenant domain.Tenant
+			if err := db.Where("owner_id = ?", clerkUserID).First(&tenant).Error; err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Empresa no encontrada"})
+				return
+			}
+
+			// 3. Actualizar campos
+			tenant.Name = req.Name
+			tenant.RFC = req.RFC
+			// Ojo: No permitimos cambiar el Plan aquí, eso lo hace el webhook de Stripe
+
+			db.Save(&tenant)
+			c.JSON(http.StatusOK, tenant)
 		})
 
 		// Crear Rancho
