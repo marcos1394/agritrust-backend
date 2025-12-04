@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/Marcos1394/agritrust-backend/internal/domain"
+	"github.com/Marcos1394/agritrust-backend/pkg/mailer" // <--- AGREGAR ESTO
 	"github.com/Marcos1394/agritrust-backend/internal/middleware"
 	"github.com/Marcos1394/agritrust-backend/pkg/database"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
 )
 
 // Middleware auxiliar para bloquear acceso si no es ADMIN
@@ -227,14 +229,30 @@ func main() {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Químico no encontrado"})
 				return
 			}
-			if chem.IsBanned {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error":   "ALERTA CRÍTICA: Intento de aplicar producto prohibido",
-					"details": "Producto " + chem.Name + " prohibido en: " + chem.BannedMarkets,
-					"status":  "BLOCKED",
-				})
-				return
-			}
+			// ... dentro de POST /applications
+		if chem.IsBanned {
+			// 1. Obtener datos para el reporte
+			var farm domain.Farm
+			db.First(&farm, "id = ?", app.FarmID)
+			userID := c.GetString("clerk_user_id") // ID del usuario que intentó la acción
+
+			// 2. ENVIAR ALERTA POR CORREO (En segundo plano con goroutine)
+			go func() {
+				// En un caso real, buscaríamos el email del dueño de la empresa (Tenant Owner)
+				// Para este MVP, envía la alerta a TU correo fijo para que veas que funciona
+				adminEmail := "marcos@kinetis.org" // <--- CAMBIA ESTO A TU CORREO REAL DONDE QUIERES RECIBIR ALERTAS
+				
+				htmlBody := mailer.GetSecurityAlertTemplate(farm.Name, chem.Name, userID)
+				mailer.SendEmail([]string{adminEmail}, "⛔ ALERTA CRÍTICA: Bloqueo Fitosanitario", htmlBody)
+			}()
+
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "ALERTA CRÍTICA: Intento de aplicar producto prohibido",
+				"details": "Producto " + chem.Name + " prohibido en: " + chem.BannedMarkets,
+				"status":  "BLOCKED",
+			})
+			return
+		}
 			app.AppliedAt = time.Now()
 			app.Status = "approved"
 			db.Create(&app)
@@ -362,15 +380,18 @@ func main() {
 			}
 			db.Create(&invite)
 
-			// 3. (Simulación) Enviar Email
-			// Aquí conectaríamos SendGrid o AWS SES.
-			// Por ahora devolvemos el link en el JSON para probar.
-			inviteLink := fmt.Sprintf("https://agritrust-phi.vercel.app/join?token=%s", invite.Token)
+			// Generar Link (Asegúrate de usar tu URL de producción en Vercel)
+			baseURL := "https://agritrust-phi.vercel.app" // Tu Frontend
+			inviteLink := fmt.Sprintf("%s/join?token=%s", baseURL, invite.Token)
+
+			// ENVIAR CORREO DE INVITACIÓN
+			go func() {
+				htmlBody := mailer.GetInviteTemplate(inviteLink, invite.Role)
+				mailer.SendEmail([]string{invite.Email}, "Invitación a colaborar en AgriTrust", htmlBody)
+			}()
 
 			c.JSON(http.StatusCreated, gin.H{
-				"message":       "Invitación creada",
-				"link_simulado": inviteLink, // <--- Para que lo copies y pruebes
-				"invite":        invite,
+				"message": "Invitación enviada por correo a " + invite.Email,
 			})
 		})
 
