@@ -27,6 +27,7 @@ hQIDAQAB
 -----END PUBLIC KEY-----
 `
 
+
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -43,45 +44,53 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		tokenString := parts[1]
 
-		// 1. Parsear y Validar el Token
+		// 1. Parsear y Validar
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Validar que el algoritmo sea RSA (RS256)
 			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 				return nil, fmt.Errorf("método de firma inesperado: %v", token.Header["alg"])
 			}
-
-			// 2. Obtener la Clave Pública (Prioridad: Variable de Entorno -> Hardcoded)
 			pemString := os.Getenv("CLERK_PEM_PUBLIC_KEY")
 			if pemString == "" {
 				pemString = HARDCODED_PEM_KEY
 			}
-
 			return parseRSAPublicKey(pemString)
 		})
 
 		if err != nil || !token.Valid {
-			fmt.Println("Error validando token:", err)
+			fmt.Println("❌ Error validando token:", err)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
 			return
 		}
 
-		// 3. Extraer Datos del Usuario (Claims)
+		// 2. LOGS DE DEPURACIÓN (ESTO ES LO NUEVO) 🕵️‍♂️
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			
 			// A. ID de Usuario
 			if sub, ok := claims["sub"].(string); ok {
 				c.Set("clerk_user_id", sub)
+				fmt.Println("✅ Usuario Autenticado:", sub)
 			}
 
-			// B. Extracción de ROL (Estándar de Clerk)
-			// Clerk guarda la metadata pública a veces plana o anidada.
-			// Generalmente viene en "public_metadata" -> "role"
-			if metadata, ok := claims["public_metadata"].(map[string]interface{}); ok {
-				if role, ok := metadata["role"].(string); ok {
-					c.Set("user_role", role) // Guardamos "admin" u "operator"
+			// B. Intento de extracción de ROL
+			fmt.Println("🔍 Claims completos recibidos:", claims) // <--- ESTO NOS DIRÁ QUÉ TRAE EL TOKEN
+			
+			// Verificamos si existe la metadata
+			if metadataRaw, ok := claims["public_metadata"]; ok {
+				fmt.Printf("   -> Metadata encontrada (Tipo %T): %v\n", metadataRaw, metadataRaw)
+				
+				// Intentamos hacer casting a mapa
+				if metadata, ok := metadataRaw.(map[string]interface{}); ok {
+					if role, ok := metadata["role"].(string); ok {
+						c.Set("user_role", role)
+						fmt.Println("   -> Rol extraído exitosamente:", role)
+					} else {
+						fmt.Println("   ⚠️ Metadata existe, pero no el campo 'role' o no es string")
+					}
+				} else {
+					fmt.Println("   ⚠️ Error de casting: public_metadata no es map[string]interface{}")
 				}
 			} else {
-				// Si no tiene rol, asumimos el más bajo
-				c.Set("user_role", "operator")
+				fmt.Println("   ⚠️ EL TOKEN NO TRAE 'public_metadata'. ¿Cerraste sesión después de asignar el rol?")
 			}
 		}
 
