@@ -10,7 +10,7 @@ import {
   UserButton 
 } from '@clerk/nextjs';
 import { useUserRole } from "../lib/useUserRole"; // <--- Hook Nuevo
-import { LayoutDashboard, Leaf, Truck, AlertTriangle, Map as MapIcon, Users } from "lucide-react";
+import { LayoutDashboard, Leaf, Truck, AlertTriangle, Map as MapIcon, Users, ShieldAlert } from "lucide-react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -103,6 +103,9 @@ export default function RootLayout({
 </a>
 <a href="/shipments" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
   <Truck size={20} /> Logística
+</a>
+<a href="/claims" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+  <ShieldAlert size={20} /> Reclamos
 </a>
                   </nav>
 

@@ -430,8 +430,58 @@ func main() {
 			c.JSON(http.StatusNotImplemented, gin.H{"message": "Módulo Logística disponible pronto"})
 		})
 
+		// ---------------------------------------------------------
+		// GESTIÓN DE RECLAMOS (COMMERCIAL DEFENSE)
+		// ---------------------------------------------------------
+
+		// Registrar un Reclamo del Cliente
 		adminOnly.POST("/claims", func(c *gin.Context) {
-			c.JSON(http.StatusNotImplemented, gin.H{"message": "Módulo Reclamos disponible pronto"})
+			var claim domain.Claim
+			if err := c.ShouldBindJSON(&claim); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 1. Validar que el embarque existe
+			var shipment domain.Shipment
+			if err := db.First(&shipment, "id = ?", claim.ShipmentID).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "El ID del embarque no es válido"})
+				return
+			}
+
+			// 2. Regla de Negocio: Actualizar el estatus del embarque a "Disputed"
+			db.Model(&shipment).Update("status", "disputed")
+
+			// 3. Guardar el reclamo
+			claim.TenantID = shipment.TenantID // Heredar del embarque
+			claim.Status = "open"              // Inicia abierto para investigación
+			if err := db.Create(&claim).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 4. (Futuro) Aquí dispararíamos la IA para analizar la foto de evidencia
+
+			c.JSON(http.StatusCreated, claim)
+		})
+
+		// Listar Reclamos (Con datos del embarque)
+		adminOnly.GET("/claims", func(c *gin.Context) {
+			var claims []domain.Claim
+			// Usamos una query cruda o preload si definimos la relación en GORM
+			// Para mantenerlo simple y rápido, traemos los claims y en el front cruzamos datos o hacemos un join manual simple aquí
+			// Mejor opción rápida: Preload falso o query directa.
+			// Asumiremos que el frontend tiene la lista de shipments para cruzar nombres por ahora para no complicar el struct.
+			db.Order("created_at desc").Find(&claims)
+			c.JSON(http.StatusOK, claims)
+		})
+
+		// Endpoint auxiliar: Listar Embarques Enviados (Para el dropdown de selección)
+		adminOnly.GET("/shipments", func(c *gin.Context) {
+			var shipments []domain.Shipment
+			// Solo traemos los que ya se enviaron
+			db.Where("status IN ?", []string{"shipped", "delivered", "disputed"}).Order("departure_time desc").Find(&shipments)
+			c.JSON(http.StatusOK, shipments)
 		})
 	}
 
