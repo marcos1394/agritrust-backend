@@ -11,7 +11,7 @@ import {
 } from '@clerk/nextjs';
 
 // Iconos para tu Sidebar
-import { LayoutDashboard, Leaf, Truck, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Leaf, Truck, AlertTriangle, MapIcon } from "lucide-react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -65,6 +65,9 @@ export default function RootLayout({
                   <a href="/compliance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
                     <AlertTriangle size={20} /> Compliance
                   </a>
+                  <a href="/farms" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+  <MapIcon size={20} /> Mis Ranchos
+</a>
                 </nav>
 
                 {/* BOTÓN DE USUARIO DE CLERK (Abajo a la izquierda) */}
