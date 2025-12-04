@@ -67,10 +67,21 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 3. Extraer Datos del Usuario (Claims)
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			// Guardamos el UserID de Clerk en el contexto para usarlo en los endpoints
-			// El ID de usuario en Clerk suele venir en el campo "sub" (Subject)
+			// A. ID de Usuario
 			if sub, ok := claims["sub"].(string); ok {
 				c.Set("clerk_user_id", sub)
+			}
+
+			// B. Extracción de ROL (Estándar de Clerk)
+			// Clerk guarda la metadata pública a veces plana o anidada.
+			// Generalmente viene en "public_metadata" -> "role"
+			if metadata, ok := claims["public_metadata"].(map[string]interface{}); ok {
+				if role, ok := metadata["role"].(string); ok {
+					c.Set("user_role", role) // Guardamos "admin" u "operator"
+				}
+			} else {
+				// Si no tiene rol, asumimos el más bajo
+				c.Set("user_role", "operator")
 			}
 		}
 
