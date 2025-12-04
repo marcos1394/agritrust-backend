@@ -19,7 +19,8 @@ import {
   Users, 
   ShieldAlert, 
   Printer, 
-  Settings 
+  Settings, 
+  PieChart
 } from "lucide-react";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -113,6 +114,9 @@ export default function RootLayout({
                     <Link href="/tools" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
                       <Printer size={20} /> Herramientas
                     </Link>
+                    <Link href="/finance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
+  <PieChart size={20} /> Finanzas
+</Link>
                     
                     <div className="pt-4 mt-auto">
                         <Link href="/settings" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">

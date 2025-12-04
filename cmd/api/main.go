@@ -51,6 +51,12 @@ func main() {
 		&domain.Claim{},
 		&domain.TeamMember{},
 		&domain.Invitation{},
+		&domain.Season{},
+		&domain.CostCategory{},
+		&domain.Budget{},
+		&domain.Expense{},
+		&domain.LeaseContract{}, // <--- NUEVA TABLA
+
 	)
 	if err != nil {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
@@ -591,6 +597,141 @@ func main() {
 			// Solo traemos los que ya se enviaron
 			db.Where("status IN ?", []string{"shipped", "delivered", "disputed"}).Order("departure_time desc").Find(&shipments)
 			c.JSON(http.StatusOK, shipments)
+		})
+
+		// 1. TEMPORADAS (Seasons)
+		// Crear Temporada (Ej: "Tomate 2025")
+		adminOnly.POST("/finance/seasons", func(c *gin.Context) {
+			var season domain.Season
+			if err := c.ShouldBindJSON(&season); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			// (Aquí podrías validar que el TenantID pertenezca al usuario, para MVP confiamos en el ID enviado)
+			db.Create(&season)
+			c.JSON(http.StatusCreated, season)
+		})
+
+		// Listar Temporadas
+		adminOnly.GET("/finance/seasons", func(c *gin.Context) {
+			tenantID := c.Query("tenant_id") // Filtrar por empresa
+			var seasons []domain.Season
+			db.Where("tenant_id = ?", tenantID).Order("start_date desc").Find(&seasons)
+			c.JSON(http.StatusOK, seasons)
+		})
+
+		// 2. CATEGORÍAS DE COSTOS (Plan de Cuentas)
+		// Crear Categoría (Ej: "Fertilizantes")
+		adminOnly.POST("/finance/categories", func(c *gin.Context) {
+			var cat domain.CostCategory
+			if err := c.ShouldBindJSON(&cat); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			db.Create(&cat)
+			c.JSON(http.StatusCreated, cat)
+		})
+
+		// Listar Categorías
+		adminOnly.GET("/finance/categories", func(c *gin.Context) {
+			tenantID := c.Query("tenant_id")
+			var cats []domain.CostCategory
+			// Traemos solo las categorías "Padre" (las que no tienen ParentID) y pre-cargamos sus hijos
+			db.Where("tenant_id = ? AND parent_id IS NULL", tenantID).Preload("Children").Find(&cats)
+			c.JSON(http.StatusOK, cats)
+		})
+
+		// 3. PRESUPUESTOS (Budgets)
+		// Asignar Presupuesto (Crear o Actualizar)
+		adminOnly.POST("/finance/budgets", func(c *gin.Context) {
+			var req domain.Budget
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Lógica "Upsert": Si ya existe presupuesto para ese (Rancho+Categoria+Mes+Año), actualízalo. Si no, créalo.
+			var existing domain.Budget
+			result := db.Where("season_id = ? AND farm_id = ? AND cost_category_id = ? AND month = ? AND year = ?",
+				req.SeasonID, req.FarmID, req.CostCategoryID, req.Month, req.Year).First(&existing)
+
+			if result.Error == nil {
+				// Ya existe -> Actualizamos monto
+				existing.Amount = req.Amount
+				db.Save(&existing)
+				c.JSON(http.StatusOK, existing)
+			} else {
+				// No existe -> Creamos nuevo
+				db.Create(&req)
+				c.JSON(http.StatusCreated, req)
+			}
+		})
+
+		// Obtener Presupuestos (Por temporada y rancho)
+		adminOnly.GET("/finance/budgets", func(c *gin.Context) {
+			seasonID := c.Query("season_id")
+			farmID := c.Query("farm_id")
+
+			var budgets []domain.Budget
+			db.Where("season_id = ? AND farm_id = ?", seasonID, farmID).Preload("CostCategory").Find(&budgets)
+			c.JSON(http.StatusOK, budgets)
+		})
+
+		// 4. GASTOS REALES (Expenses)
+		// Registrar Gasto (Ej: Factura de Fertilizante)
+		adminOnly.POST("/finance/expenses", func(c *gin.Context) {
+			var expense domain.Expense
+			if err := c.ShouldBindJSON(&expense); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			expense.ExpenseDate = time.Now() // O usar la fecha que venga en el JSON si se envía
+			db.Create(&expense)
+			c.JSON(http.StatusCreated, expense)
+		})
+
+		// Reporte: Comparativa Presupuesto vs Gasto (El cerebro del módulo)
+		adminOnly.GET("/finance/report/variance", func(c *gin.Context) {
+			seasonID := c.Query("season_id")
+			farmID := c.Query("farm_id")
+
+			type ReportRow struct {
+				CategoryName string  `json:"category_name"`
+				Budgeted     float64 `json:"budgeted"`
+				Spent        float64 `json:"spent"`
+				Variance     float64 `json:"variance"` // Presupuesto - Gasto
+			}
+
+			// Esta es una query más compleja. Para el MVP, haremos dos queries simples y las uniremos en memoria.
+			// 1. Sumar Presupuestos por Categoría
+			type BudgetSum struct {
+				CostCategoryID uuid.UUID
+				Total          float64
+			}
+			var bSums []BudgetSum
+			db.Model(&domain.Budget{}).
+				Where("season_id = ? AND farm_id = ?", seasonID, farmID).
+				Select("cost_category_id, SUM(amount) as total").
+				Group("cost_category_id").Scan(&bSums)
+
+			// 2. Sumar Gastos por Categoría
+			type ExpenseSum struct {
+				CostCategoryID uuid.UUID
+				Total          float64
+			}
+			var eSums []ExpenseSum
+			db.Model(&domain.Expense{}).
+				Where("season_id = ? AND farm_id = ?", seasonID, farmID).
+				Select("cost_category_id, SUM(amount) as total").
+				Group("cost_category_id").Scan(&eSums)
+
+			// 3. Unir y Formatear
+			// (Simplificado: Devolvemos raw para que el frontend lo procese o iteramos aquí)
+			// Para rapidez, enviamos las dos listas y que React haga el match visual.
+			c.JSON(http.StatusOK, gin.H{
+				"budget_totals":  bSums,
+				"expense_totals": eSums,
+			})
 		})
 	}
 
