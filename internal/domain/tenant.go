@@ -14,6 +14,7 @@ type Tenant struct {
 	RFC       string    `gorm:"size:13;unique" json:"rfc"`   // Contexto México
 	Plan      string    `gorm:"default:'basic'" json:"plan"` // basic, pro, enterprise
 	Active    bool      `gorm:"default:true" json:"active"`
+	OwnerID   string    `gorm:"size:255;index" json:"owner_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

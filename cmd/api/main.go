@@ -48,8 +48,14 @@ func main() {
 	// ---------------------------------------------------------
 	// 🔒 ACTIVAR SEGURIDAD (MIDDLEWARE CLERK)
 	// ---------------------------------------------------------
+	// Health Check (sin autenticación)
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "online", "system": "AgriTrust Backend"})
+	})
+
 	// A partir de esta línea, CUALQUIER ruta de abajo exigirá Token
-	r.Use(middleware.AuthMiddleware())
+	protected := r.Group("")
+	protected.Use(middleware.AuthMiddleware())
 
 	// ---------------------------------------------------------
 	// RUTAS PROTEGIDAS (Tus endpoints de negocio)
@@ -59,26 +65,40 @@ func main() {
 	// 2. ENDPOINTS: SETUP Y ADMINISTRACIÓN
 	// ---------------------------------------------------------
 
-	// Health Check
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "online", "system": "AgriTrust Backend"})
-	})
+	// Crear Empresa (Automáticamente te asigna como dueño)
+	protected.POST("/tenants", func(c *gin.Context) {
+		// 1. Obtener el ID de Clerk del contexto (lo puso el middleware)
+		clerkUserID := c.GetString("clerk_user_id")
+		if clerkUserID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Usuario no identificado"})
+			return
+		}
 
-	// Crear Empresa (Tenant)
-	r.POST("/tenants", func(c *gin.Context) {
 		var newTenant domain.Tenant
 		if err := c.ShouldBindJSON(&newTenant); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		db.Create(&newTenant)
+
+		// 2. Asignar el dueño
+		newTenant.OwnerID = clerkUserID
+
+		// 3. Guardar
+		if err := db.Create(&newTenant).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusCreated, newTenant)
 	})
 
-	// Listar Empresas
-	r.GET("/tenants", func(c *gin.Context) {
+	// Listar MIS Empresas (Filtro de Seguridad)
+	protected.GET("/tenants", func(c *gin.Context) {
+		clerkUserID := c.GetString("clerk_user_id")
+
 		var tenants []domain.Tenant
-		db.Find(&tenants)
+		// WHERE owner_id = usuario_actual
+		db.Where("owner_id = ?", clerkUserID).Find(&tenants)
+
 		c.JSON(http.StatusOK, tenants)
 	})
 
