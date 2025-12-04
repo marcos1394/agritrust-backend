@@ -118,6 +118,13 @@ export default function HarvestPage() {
                             <span className="bg-green-900 text-green-300 text-xs px-2 py-1 rounded">
                                 RECIBIDO
                             </span>
+                            <a 
+  href={`/verify/${bin.qr_code}`} 
+  target="_blank"
+  className="font-mono text-lg font-bold text-white hover:text-green-400 underline decoration-dotted"
+>
+  {bin.qr_code}
+</a>
                         </div>
                     ))}
                 </div>

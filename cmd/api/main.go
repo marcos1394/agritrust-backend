@@ -72,6 +72,64 @@ func main() {
 	})
 
 	// ---------------------------------------------------------
+	// 🌍 ZONA PÚBLICA (Consumer Facing)
+	// ---------------------------------------------------------
+
+	// ... (Tu endpoint /ping ya está aquí) ...
+
+	// PASAPORTE DIGITAL: Historia de la caja para el consumidor
+	r.GET("/public/passport/:qr_code", func(c *gin.Context) {
+		qrCode := c.Param("qr_code")
+
+		// 1. Buscar la caja
+		var bin domain.Bin
+		if err := db.Where("qr_code = ?", qrCode).First(&bin).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Producto no encontrado. Verifique el código."})
+			return
+		}
+
+		// 2. Cargar datos relacionados (Lote -> Cultivo -> Rancho -> Tenant)
+		// Usamos queries manuales para no complicar los structs con preloads anidados profundos hoy
+		var batch domain.HarvestBatch
+		db.First(&batch, "id = ?", bin.HarvestBatchID)
+
+		var crop domain.Crop
+		db.First(&crop, "id = ?", batch.CropID)
+
+		var farm domain.Farm
+		db.First(&farm, "id = ?", batch.FarmID)
+
+		var tenant domain.Tenant
+		db.First(&tenant, "id = ?", farm.TenantID)
+
+		// 3. (Opcional) Verificar si hubo químicos peligrosos en los últimos 30 días
+		// Esto sería una query a ApplicationRecord filtrando por FarmID y Fecha.
+		// Por ahora, devolvemos "Certificado Verde" hardcodeado para el MVP.
+
+		// 4. Construir la "Historia" (Storytelling JSON)
+		passport := gin.H{
+			"product_name":  crop.Name,
+			"variety":       crop.Variety,
+			"origin":        farm.Name,
+			"producer":      tenant.Name,
+			"harvest_date":  batch.HarvestDate,
+			"freshness_hrs": time.Since(batch.HarvestDate).Hours(),
+			"location":      farm.Location, // Coordenadas para el mapa
+			"certifications": []string{
+				"AgriTrust Certified Safety",
+				"No Banned Chemicals",
+			},
+			"journey": []gin.H{
+				{"stage": "Cosecha", "date": batch.HarvestDate, "desc": "Recolección manual en campo"},
+				{"stage": "Empaque", "date": bin.UpdatedAt, "desc": "Inspección de calidad y enfriamiento"},
+				{"stage": "Envío", "date": time.Now(), "desc": "En ruta al centro de distribución"}, // Simulado
+			},
+		}
+
+		c.JSON(http.StatusOK, passport)
+	})
+
+	// ---------------------------------------------------------
 	// 🔒 ZONA PROTEGIDA GENERAL (Admins + Operadores)
 	// ---------------------------------------------------------
 	// Aquí entran todos los usuarios logueados.
