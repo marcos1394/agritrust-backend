@@ -48,6 +48,8 @@ func main() {
 		&domain.Shipment{},
 		&domain.Bin{},
 		&domain.Claim{},
+		&domain.TeamMember{},
+		&domain.Invitation{},
 	)
 	if err != nil {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
@@ -97,6 +99,42 @@ func main() {
 				db.Find(&farms)
 			}
 			c.JSON(http.StatusOK, farms)
+		})
+
+		// Aceptar Invitación
+		protected.POST("/team/join", func(c *gin.Context) {
+			clerkUserID := c.GetString("clerk_user_id")
+
+			type JoinReq struct {
+				Token string `json:"token"`
+			}
+			var req JoinReq
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Token requerido"})
+				return
+			}
+
+			// 1. Buscar Invitación
+			var invite domain.Invitation
+			if err := db.Where("token = ? AND status = 'pending'", req.Token).First(&invite).Error; err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Invitación inválida o expirada"})
+				return
+			}
+
+			// 2. Crear Membresía
+			member := domain.TeamMember{
+				TenantID: invite.TenantID,
+				UserID:   clerkUserID,
+				Role:     invite.Role,
+				JoinedAt: time.Now(),
+			}
+			db.Create(&member)
+
+			// 3. Marcar invitación como usada
+			invite.Status = "accepted"
+			db.Save(&invite)
+
+			c.JSON(http.StatusOK, gin.H{"message": "¡Bienvenido al equipo!", "role": invite.Role})
 		})
 
 		protected.GET("/chemicals", func(c *gin.Context) {
@@ -231,6 +269,69 @@ func main() {
 				stats["weekly_trend"] = trend
 			}
 			c.JSON(http.StatusOK, stats)
+		})
+
+		// Invitar Colaborador
+		adminOnly.POST("/team/invite", func(c *gin.Context) {
+			// 1. Obtener Tenant del Admin actual
+			// (Simplificado: Asumimos que el admin opera sobre su primera empresa.
+			// En producción, el tenant_id debería venir en el header o seleccionarse)
+			clerkUserID := c.GetString("clerk_user_id")
+			var tenant domain.Tenant
+			if err := db.Where("owner_id = ?", clerkUserID).First(&tenant).Error; err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "No tienes una empresa registrada para invitar a nadie."})
+				return
+			}
+
+			type InviteReq struct {
+				Email string `json:"email"`
+				Role  string `json:"role"` // operator, admin
+			}
+			var req InviteReq
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 2. Crear Invitación
+			invite := domain.Invitation{
+				TenantID:  tenant.ID,
+				Email:     req.Email,
+				Role:      req.Role,
+				Token:     uuid.New().String(), // Token simple
+				Status:    "pending",
+				CreatedAt: time.Now(),
+			}
+			db.Create(&invite)
+
+			// 3. (Simulación) Enviar Email
+			// Aquí conectaríamos SendGrid o AWS SES.
+			// Por ahora devolvemos el link en el JSON para probar.
+			inviteLink := fmt.Sprintf("https://agritrust-phi.vercel.app/join?token=%s", invite.Token)
+
+			c.JSON(http.StatusCreated, gin.H{
+				"message":       "Invitación creada",
+				"link_simulado": inviteLink, // <--- Para que lo copies y pruebes
+				"invite":        invite,
+			})
+		})
+
+		// Listar Miembros del Equipo
+		adminOnly.GET("/team", func(c *gin.Context) {
+			clerkUserID := c.GetString("clerk_user_id")
+			// Buscar tenant del admin
+			var tenant domain.Tenant
+			db.Where("owner_id = ?", clerkUserID).First(&tenant)
+
+			// Buscar miembros
+			var members []domain.TeamMember
+			db.Where("tenant_id = ?", tenant.ID).Find(&members)
+
+			// Buscar invitaciones pendientes
+			var invites []domain.Invitation
+			db.Where("tenant_id = ? AND status = 'pending'", tenant.ID).Find(&invites)
+
+			c.JSON(http.StatusOK, gin.H{"members": members, "invites": invites})
 		})
 
 		// --- GESTIÓN (CREAR ENTIDADES) ---
