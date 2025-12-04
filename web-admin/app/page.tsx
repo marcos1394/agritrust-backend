@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import HarvestChart from "../components/HarvestChart";
 import Onboarding from "../components/Onboarding"; // Componente de Bienvenida
-
 export default function Home() {
   const axiosAuth = useAxiosAuth();
   
