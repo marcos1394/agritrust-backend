@@ -468,14 +468,19 @@ func main() {
 		})
 
 		// Crear Rancho
+		// ACTUALIZACIÓN: CREAR RANCHO con Ownership
 		adminOnly.POST("/farms", func(c *gin.Context) {
-			var newFarm domain.Farm
-			if err := c.ShouldBindJSON(&newFarm); err != nil {
+			var f domain.Farm
+			if err := c.ShouldBindJSON(&f); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			db.Create(&newFarm)
-			c.JSON(http.StatusCreated, newFarm)
+			// Validar ownership type por defecto
+			if f.OwnershipType == "" {
+				f.OwnershipType = "own"
+			}
+			db.Create(&f)
+			c.JSON(http.StatusCreated, f)
 		})
 
 		// Crear Químico (Catálogo)
@@ -537,6 +542,60 @@ func main() {
 			query.Order("updated_at desc").Limit(1000).Find(&bins)
 
 			c.JSON(http.StatusOK, bins)
+		})
+
+		// ---------------------------------------------------------
+		// 📜 GESTIÓN DE ARRENDAMIENTOS (LAND MANAGEMENT)
+		// ---------------------------------------------------------
+
+		// Crear Contrato
+		adminOnly.POST("/land/contracts", func(c *gin.Context) {
+			var contract domain.LeaseContract
+			if err := c.ShouldBindJSON(&contract); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Validar fechas
+			if contract.EndDate.Before(contract.StartDate) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "La fecha fin debe ser posterior al inicio"})
+				return
+			}
+
+			// Actualizar estatus del Rancho a "rented" automáticamente
+			db.Model(&domain.Farm{}).Where("id = ?", contract.FarmID).Update("ownership_type", "rented")
+
+			contract.Status = "active"
+			db.Create(&contract)
+			c.JSON(http.StatusCreated, contract)
+		})
+
+		// Listar Contratos (Con datos del Rancho)
+		adminOnly.GET("/land/contracts", func(c *gin.Context) {
+			// Filtrar por tenant (sacado del usuario o query param para MVP)
+			// Aquí asumimos query param o lógica de tenant
+			var contracts []domain.LeaseContract
+			db.Preload("Farm").Order("end_date asc").Find(&contracts)
+			c.JSON(http.StatusOK, contracts)
+		})
+
+		// 🚨 ALERTAS: Contratos por vencer (Próximos 60 días)
+		adminOnly.GET("/land/alerts", func(c *gin.Context) {
+			var expiring []domain.LeaseContract
+
+			// Fecha límite: Hoy + 60 días
+			limitDate := time.Now().AddDate(0, 0, 60)
+
+			db.Preload("Farm").
+				Where("status = 'active' AND end_date BETWEEN ? AND ?", time.Now(), limitDate).
+				Find(&expiring)
+
+			// Si hay alertas críticas, podríamos disparar emails aquí también
+			if len(expiring) > 0 {
+				// Lógica opcional de notificación proactiva
+			}
+
+			c.JSON(http.StatusOK, expiring)
 		})
 
 		// Logística
