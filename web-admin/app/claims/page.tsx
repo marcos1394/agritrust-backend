@@ -85,9 +85,9 @@ export default function ClaimsPage() {
   };
 
   // Estadísticas
-  const totalDisputed = claims.reduce((sum, c) => sum + c.amount_usd, 0);
-  const resolvedClaims = claims.filter(c => c.status === 'resolved').length;
-  const pendingClaims = claims.filter(c => c.status === 'pending').length;
+  const totalDisputed = claims && Array.isArray(claims) ? claims.reduce((sum, c) => sum + c.amount_usd, 0) : 0;
+  const resolvedClaims = claims && Array.isArray(claims) ? claims.filter(c => c.status === 'resolved').length : 0;
+  const pendingClaims = claims && Array.isArray(claims) ? claims.filter(c => c.status === 'pending').length : 0;
 
   // Agrupar claims por estado
   const getStatusColor = (status: string) => {
