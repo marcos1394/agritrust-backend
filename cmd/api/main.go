@@ -63,7 +63,8 @@ func main() {
 		&domain.PurchaseOrderItem{}, // <--- NUEVAS
 		&domain.Device{},
 		&domain.TelemetryData{},
-
+		&domain.Asset{},
+		&domain.MaintenanceLog{},
 	)
 	if err != nil {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
@@ -398,6 +399,95 @@ func main() {
 		})
 
 		// ---------------------------------------------------------
+		// 🚜 GESTIÓN DE ACTIVOS Y TALLER
+		// ---------------------------------------------------------
+
+		// 1. Crear Maquinaria
+		adminOnly.POST("/fleet/assets", func(c *gin.Context) {
+			var asset domain.Asset
+			if err := c.ShouldBindJSON(&asset); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			// Config inicial
+			asset.Status = "active"
+			if asset.NextServiceAt == 0 {
+				asset.NextServiceAt = asset.CurrentUsage + asset.ServiceInterval
+			}
+			db.Create(&asset)
+			c.JSON(http.StatusCreated, asset)
+		})
+
+		// Listar Maquinaria (Con cálculo de salud)
+		adminOnly.GET("/fleet/assets", func(c *gin.Context) {
+			var assets []domain.Asset
+			db.Order("name asc").Find(&assets)
+			c.JSON(http.StatusOK, assets)
+		})
+
+		// 2. Registrar Uso Diario (Bitácora de Operador)
+		// Input: { "hours": 8 } -> Suma al acumulado
+		adminOnly.POST("/fleet/assets/:id/usage", func(c *gin.Context) {
+			id := c.Param("id")
+			type UsageReq struct {
+				AddAmount float64 `json:"add_amount"`
+			}
+			var req UsageReq
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			var asset domain.Asset
+			if err := db.First(&asset, "id = ?", id).Error; err != nil {
+				c.JSON(404, gin.H{"error": "Activo no encontrado"})
+				return
+			}
+
+			asset.CurrentUsage += req.AddAmount
+			db.Save(&asset)
+			c.JSON(http.StatusOK, gin.H{"message": "Uso registrado", "new_total": asset.CurrentUsage})
+		})
+
+		// 3. Registrar Mantenimiento (Taller)
+		adminOnly.POST("/fleet/assets/:id/maintenance", func(c *gin.Context) {
+			id := c.Param("id")
+			var log domain.MaintenanceLog
+			if err := c.ShouldBindJSON(&log); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			tx := db.Begin()
+
+			// Guardar Log
+			log.AssetID = uuid.MustParse(id)
+			log.ServiceDate = time.Now()
+			// (Asumir tenant del usuario)
+			// log.TenantID = ...
+			if err := tx.Create(&log).Error; err != nil {
+				tx.Rollback()
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Actualizar Activo (Reprogramar siguiente servicio)
+			var asset domain.Asset
+			tx.First(&asset, "id = ?", id)
+
+			asset.Status = "active" // Si estaba roto, ya sirve
+			asset.NextServiceAt = asset.CurrentUsage + asset.ServiceInterval
+
+			tx.Save(&asset)
+			tx.Commit()
+
+			// (Opcional) Crear Gasto Financiero automático
+			// ...
+
+			c.JSON(http.StatusOK, gin.H{"message": "Servicio registrado y programado"})
+		})
+
+		// ---------------------------------------------------------
 		// 💧 MÓDULO IOT (RIEGO Y TELEMETRÍA)
 		// ---------------------------------------------------------
 
@@ -417,7 +507,9 @@ func main() {
 			farmID := c.Query("farm_id")
 			var devs []domain.Device
 			query := db.Model(&domain.Device{})
-			if farmID != "" { query = query.Where("farm_id = ?", farmID) }
+			if farmID != "" {
+				query = query.Where("farm_id = ?", farmID)
+			}
 			query.Find(&devs)
 			c.JSON(http.StatusOK, devs)
 		})
@@ -429,11 +521,11 @@ func main() {
 
 			var data []domain.TelemetryData
 			query := db.Where("device_id = ?", deviceID).Order("timestamp asc")
-			
+
 			if period == "24h" {
 				query = query.Where("timestamp >= ?", time.Now().Add(-24*time.Hour))
 			}
-			
+
 			query.Find(&data)
 			c.JSON(http.StatusOK, data)
 		})
@@ -442,17 +534,17 @@ func main() {
 		// Genera 24 horas de datos falsos para un sensor
 		adminOnly.POST("/iot/simulate/:device_id", func(c *gin.Context) {
 			deviceID := c.Param("device_id")
-			
+
 			// Generar 1 dato cada hora por las últimas 24h
 			for i := 24; i >= 0; i-- {
 				// Simular una curva senoidal de humedad (sube y baja)
 				// Usamos 'i' para variar el valor
 				baseValue := 50.0 // Humedad media
-				variance := float64(i%5) * 2.0 
-				
+				variance := float64(i%5) * 2.0
+
 				db.Create(&domain.TelemetryData{
-					DeviceID: uuid.MustParse(deviceID),
-					Value:    baseValue + variance,
+					DeviceID:  uuid.MustParse(deviceID),
+					Value:     baseValue + variance,
 					Timestamp: time.Now().Add(time.Duration(-i) * time.Hour),
 				})
 			}

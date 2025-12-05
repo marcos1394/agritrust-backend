@@ -192,6 +192,14 @@ export default function RootLayout({
                       sidebarOpen={sidebarOpen}
                     />
 
+                    <NavLink
+                    href="/fleet"
+                      icon={<Truck size={20} />} 
+                      label="Maquinaria"
+                      isActive={isActive('/fleet')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
                     {/* COMPLIANCE Y SEGURIDAD */}
                     <div className={`${sidebarOpen ? 'block' : 'hidden'} pt-4`}>
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-4 mb-3">Compliance</p>
