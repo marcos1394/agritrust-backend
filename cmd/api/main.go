@@ -58,6 +58,10 @@ func main() {
 		&domain.LeaseContract{}, // <--- NUEVA TABLA
 		&domain.Product{},
 		&domain.StockMovement{},
+		&domain.Supplier{},
+		&domain.PurchaseOrder{},
+		&domain.PurchaseOrderItem{}, // <--- NUEVAS
+
 	)
 	if err != nil {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
@@ -389,6 +393,137 @@ func main() {
 				stats["weekly_trend"] = trend
 			}
 			c.JSON(http.StatusOK, stats)
+		})
+
+		// ---------------------------------------------------------
+		// 🛒 MÓDULO DE COMPRAS (PROCUREMENT)
+		// ---------------------------------------------------------
+
+		// 1. PROVEEDORES
+		adminOnly.POST("/procurement/suppliers", func(c *gin.Context) {
+			var s domain.Supplier
+			if err := c.ShouldBindJSON(&s); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			db.Create(&s)
+			c.JSON(http.StatusCreated, s)
+		})
+
+		adminOnly.GET("/procurement/suppliers", func(c *gin.Context) {
+			var suppliers []domain.Supplier
+			db.Find(&suppliers)
+			c.JSON(http.StatusOK, suppliers)
+		})
+
+		// 2. ÓRDENES DE COMPRA (PO)
+		// Crear Borrador de Orden
+		adminOnly.POST("/procurement/orders", func(c *gin.Context) {
+			var po domain.PurchaseOrder
+			if err := c.ShouldBindJSON(&po); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Generar Folio si no viene
+			if po.OrderNumber == "" {
+				po.OrderNumber = fmt.Sprintf("PO-%d", time.Now().Unix())
+			}
+			po.Status = "draft"
+			po.OrderDate = time.Now()
+
+			// Calcular totales de items
+			var total float64
+			for i := range po.Items {
+				po.Items[i].Subtotal = po.Items[i].Quantity * po.Items[i].UnitCost
+				total += po.Items[i].Subtotal
+			}
+			po.TotalAmount = total
+
+			db.Create(&po)
+			c.JSON(http.StatusCreated, po)
+		})
+
+		// Listar Órdenes
+		adminOnly.GET("/procurement/orders", func(c *gin.Context) {
+			var orders []domain.PurchaseOrder
+			// Preload full: Supplier + Items + Product info
+			db.Preload("Supplier").Preload("Items.Product").Order("created_at desc").Find(&orders)
+			c.JSON(http.StatusOK, orders)
+		})
+
+		// 3. RECIBIR MERCANCÍA (EL CEREBRO DEL ERP) 🧠
+		// Este endpoint convierte la PO en Inventario real
+		adminOnly.POST("/procurement/orders/:id/receive", func(c *gin.Context) {
+			poID := c.Param("id")
+
+			// Iniciar Transacción
+			tx := db.Begin()
+
+			var po domain.PurchaseOrder
+			if err := tx.Preload("Items").First(&po, "id = ?", poID).Error; err != nil {
+				tx.Rollback()
+				c.JSON(404, gin.H{"error": "Orden no encontrada"})
+				return
+			}
+
+			if po.Status == "received" {
+				tx.Rollback()
+				c.JSON(400, gin.H{"error": "Esta orden ya fue recibida"})
+				return
+			}
+
+			// A. Procesar cada item
+			for _, item := range po.Items {
+				// 1. Crear Movimiento de Entrada (IN)
+				mov := domain.StockMovement{
+					TenantID:    po.TenantID,
+					ProductID:   item.ProductID,
+					Type:        "IN",
+					Quantity:    item.Quantity,
+					CostPerUnit: item.UnitCost,
+					ReferenceID: po.OrderNumber,
+					Reason:      "Recepción de PO " + po.OrderNumber,
+					CreatedAt:   time.Now(),
+				}
+				if err := tx.Create(&mov).Error; err != nil {
+					tx.Rollback()
+					c.JSON(500, gin.H{"error": "Error creando movimiento"})
+					return
+				}
+
+				// 2. Actualizar Producto (Stock y Costo Promedio)
+				var prod domain.Product
+				tx.First(&prod, "id = ?", item.ProductID)
+
+				currentVal := prod.CurrentStock * prod.AvgCost
+				newVal := item.Quantity * item.UnitCost
+				newStock := prod.CurrentStock + item.Quantity
+
+				if newStock > 0 {
+					prod.AvgCost = (currentVal + newVal) / newStock
+				}
+				prod.CurrentStock = newStock
+				tx.Save(&prod)
+			}
+
+			// B. Crear el Gasto Financiero Automático (Para que Finanzas lo vea)
+			// (Asumimos una temporada/rancho default o nulo para este ejemplo global, o lo pedimos en el body)
+			expense := domain.Expense{
+				TenantID:    po.TenantID,
+				Description: "Compra PO " + po.OrderNumber + " (" + po.Status + ")",
+				Amount:      po.TotalAmount,
+				ExpenseDate: time.Now(),
+				// FarmID y SeasonID se podrían inferir o pedir al usuario al recibir
+			}
+			tx.Create(&expense)
+
+			// C. Cerrar Orden
+			po.Status = "received"
+			tx.Save(&po)
+
+			tx.Commit()
+			c.JSON(http.StatusOK, gin.H{"message": "Mercancía recibida e inventario actualizado"})
 		})
 
 		// ---------------------------------------------------------

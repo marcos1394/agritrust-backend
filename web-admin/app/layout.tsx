@@ -24,7 +24,8 @@ import {
   PieChart,
   Package,
   Menu,
-  X
+  X,
+  ShoppingCart
 } from "lucide-react";
 import { useState } from "react";
 
@@ -171,6 +172,14 @@ export default function RootLayout({
                       icon={<Package size={20} />} 
                       label="Almacén"
                       isActive={isActive('/inventory')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink
+                    href="/procurement"
+                      icon={<ShoppingCart size={20} />} 
+                      label="Compras"
+                      isActive={isActive('/procurement')}
                       sidebarOpen={sidebarOpen}
                     />
 
