@@ -61,6 +61,8 @@ func main() {
 		&domain.Supplier{},
 		&domain.PurchaseOrder{},
 		&domain.PurchaseOrderItem{}, // <--- NUEVAS
+		&domain.Device{},
+		&domain.TelemetryData{},
 
 	)
 	if err != nil {
@@ -393,6 +395,68 @@ func main() {
 				stats["weekly_trend"] = trend
 			}
 			c.JSON(http.StatusOK, stats)
+		})
+
+		// ---------------------------------------------------------
+		// 💧 MÓDULO IOT (RIEGO Y TELEMETRÍA)
+		// ---------------------------------------------------------
+
+		// 1. GESTIÓN DE DISPOSITIVOS
+		adminOnly.POST("/iot/devices", func(c *gin.Context) {
+			var dev domain.Device
+			if err := c.ShouldBindJSON(&dev); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			dev.Status = "online"
+			db.Create(&dev)
+			c.JSON(http.StatusCreated, dev)
+		})
+
+		adminOnly.GET("/iot/devices", func(c *gin.Context) {
+			farmID := c.Query("farm_id")
+			var devs []domain.Device
+			query := db.Model(&domain.Device{})
+			if farmID != "" { query = query.Where("farm_id = ?", farmID) }
+			query.Find(&devs)
+			c.JSON(http.StatusOK, devs)
+		})
+
+		// 2. OBTENER DATOS (Para Gráficas)
+		adminOnly.GET("/iot/telemetry", func(c *gin.Context) {
+			deviceID := c.Query("device_id")
+			period := c.Query("period") // "24h", "7d"
+
+			var data []domain.TelemetryData
+			query := db.Where("device_id = ?", deviceID).Order("timestamp asc")
+			
+			if period == "24h" {
+				query = query.Where("timestamp >= ?", time.Now().Add(-24*time.Hour))
+			}
+			
+			query.Find(&data)
+			c.JSON(http.StatusOK, data)
+		})
+
+		// 3. SIMULADOR DE DATOS (MÁGICO PARA DEMOS) 🪄
+		// Genera 24 horas de datos falsos para un sensor
+		adminOnly.POST("/iot/simulate/:device_id", func(c *gin.Context) {
+			deviceID := c.Param("device_id")
+			
+			// Generar 1 dato cada hora por las últimas 24h
+			for i := 24; i >= 0; i-- {
+				// Simular una curva senoidal de humedad (sube y baja)
+				// Usamos 'i' para variar el valor
+				baseValue := 50.0 // Humedad media
+				variance := float64(i%5) * 2.0 
+				
+				db.Create(&domain.TelemetryData{
+					DeviceID: uuid.MustParse(deviceID),
+					Value:    baseValue + variance,
+					Timestamp: time.Now().Add(time.Duration(-i) * time.Hour),
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{"message": "Datos simulados generados"})
 		})
 
 		// ---------------------------------------------------------

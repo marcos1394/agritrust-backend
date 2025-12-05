@@ -25,7 +25,8 @@ import {
   Package,
   Menu,
   X,
-  ShoppingCart
+  ShoppingCart,
+  Droplets
 } from "lucide-react";
 import { useState } from "react";
 
@@ -180,6 +181,14 @@ export default function RootLayout({
                       icon={<ShoppingCart size={20} />} 
                       label="Compras"
                       isActive={isActive('/procurement')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink
+                    href="/irrigation"
+                      icon={<Droplets size={20} />} 
+                      label="Riego IoT"
+                      isActive={isActive('/irrigation')}
                       sidebarOpen={sidebarOpen}
                     />
 
