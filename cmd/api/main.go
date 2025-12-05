@@ -56,7 +56,8 @@ func main() {
 		&domain.Budget{},
 		&domain.Expense{},
 		&domain.LeaseContract{}, // <--- NUEVA TABLA
-
+		&domain.Product{},
+		&domain.StockMovement{},
 	)
 	if err != nil {
 		panic("❌ Error CRÍTICO en migración de base de datos: " + err.Error())
@@ -158,7 +159,7 @@ func main() {
 		protected.GET("/farms", func(c *gin.Context) {
 			tenantID := c.Query("tenant_id")
 			var farms []domain.Farm
-			
+
 			// Si el cliente filtra por tenant, aplicamos el filtro
 			if tenantID != "" {
 				db.Where("tenant_id = ?", tenantID).Find(&farms)
@@ -166,7 +167,7 @@ func main() {
 				// Si no, traemos todo (aquí podrías filtrar por usuario si quisieras ser estricto)
 				db.Find(&farms)
 			}
-			
+
 			c.JSON(http.StatusOK, farms)
 		})
 
@@ -262,6 +263,40 @@ func main() {
 				})
 				return
 			}
+
+			// LÓGICA DE INVENTARIO: Descontar producto si existe link
+			// 1. Buscar si este químico está ligado a un producto de inventario
+			var product domain.Product
+			// (Asumiendo que hiciste el link ChemicalID en Product)
+			if err := db.Where("chemical_id = ?", app.ChemicalID).First(&product).Error; err == nil {
+
+				// Validar Stock Suficiente
+				if product.CurrentStock < app.Dosage {
+					// Opción A: Bloquear (Estricto)
+					// c.JSON(400, gin.H{"error": "Stock insuficiente en almacén"})
+					// return
+
+					// Opción B: Permitir y dejar stock negativo (Flexible, genera alerta)
+					// Vamos con opción B para no detener operación de campo
+				}
+
+				// Crear Movimiento de Salida (OUT)
+				mov := domain.StockMovement{
+					TenantID:    app.TenantID,
+					ProductID:   product.ID,
+					Type:        "OUT",
+					Quantity:    app.Dosage,
+					ReferenceID: app.ID.String(),
+					Reason:      "Aplicación Fitosanitaria",
+					CreatedAt:   time.Now(),
+				}
+				db.Create(&mov)
+
+				// Descontar
+				product.CurrentStock -= app.Dosage
+				db.Save(&product)
+			}
+
 			app.AppliedAt = time.Now()
 			app.Status = "approved"
 			db.Create(&app)
@@ -354,6 +389,82 @@ func main() {
 				stats["weekly_trend"] = trend
 			}
 			c.JSON(http.StatusOK, stats)
+		})
+
+		// ---------------------------------------------------------
+		// 🏭 GESTIÓN DE INVENTARIOS (ALMACÉN)
+		// ---------------------------------------------------------
+
+		// Crear Producto (Alta de SKU)
+		adminOnly.POST("/inventory/products", func(c *gin.Context) {
+			var prod domain.Product
+			if err := c.ShouldBindJSON(&prod); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			db.Create(&prod)
+			c.JSON(http.StatusCreated, prod)
+		})
+
+		// Listar Inventario (Con alerta de stock bajo visual en frontend)
+		adminOnly.GET("/inventory/products", func(c *gin.Context) {
+			var prods []domain.Product
+			db.Order("name asc").Find(&prods)
+			c.JSON(http.StatusOK, prods)
+		})
+
+		// Registrar Entrada de Almacén (Compra)
+		adminOnly.POST("/inventory/movements/in", func(c *gin.Context) {
+			type InReq struct {
+				ProductID   string  `json:"product_id"`
+				Quantity    float64 `json:"quantity"`
+				CostPerUnit float64 `json:"cost_per_unit"`
+				Reference   string  `json:"reference"` // Factura
+			}
+			var req InReq
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Iniciar Transacción (Vital para integridad financiera)
+			tx := db.Begin()
+
+			// 1. Crear Movimiento
+			mov := domain.StockMovement{
+				TenantID:    uuid.MustParse(c.GetString("clerk_user_id")), // Ojo: ajustar lógica tenant
+				ProductID:   uuid.MustParse(req.ProductID),
+				Type:        "IN",
+				Quantity:    req.Quantity,
+				CostPerUnit: req.CostPerUnit,
+				ReferenceID: req.Reference,
+				Reason:      "Compra / Entrada Almacén",
+				CreatedAt:   time.Now(),
+			}
+			if err := tx.Create(&mov).Error; err != nil {
+				tx.Rollback()
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+
+			// 2. Actualizar Stock y Costo Promedio
+			var prod domain.Product
+			tx.First(&prod, "id = ?", req.ProductID)
+
+			// Recalcular Costo Promedio Ponderado
+			currentTotalValue := prod.CurrentStock * prod.AvgCost
+			newInputValue := req.Quantity * req.CostPerUnit
+			newTotalStock := prod.CurrentStock + req.Quantity
+
+			if newTotalStock > 0 {
+				prod.AvgCost = (currentTotalValue + newInputValue) / newTotalStock
+			}
+			prod.CurrentStock = newTotalStock
+
+			tx.Save(&prod)
+			tx.Commit()
+
+			c.JSON(http.StatusOK, gin.H{"message": "Entrada registrada", "new_stock": prod.CurrentStock})
 		})
 
 		// Invitar Colaborador

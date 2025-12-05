@@ -3,6 +3,7 @@
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Link from "next/link"; // Usamos Link para navegación optimizada
+import { usePathname } from "next/navigation";
 import { 
   ClerkProvider, 
   SignedIn, 
@@ -20,8 +21,12 @@ import {
   ShieldAlert, 
   Printer, 
   Settings, 
-  PieChart
+  PieChart,
+  Package,
+  Menu,
+  X
 } from "lucide-react";
+import { useState } from "react";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -31,26 +36,35 @@ function AdminProtector({ children }: { children: React.ReactNode }) {
   const { role, loading, isAdmin } = useUserRole();
 
   if (loading) {
-    return <div className="h-screen flex items-center justify-center text-slate-500">Cargando permisos...</div>;
+    return (
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-green-500 rounded-lg mx-auto mb-4 animate-pulse" />
+          <p className="text-slate-600 font-medium">Validando permisos...</p>
+        </div>
+      </div>
+    );
   }
 
   // SI NO ES ADMIN -> BLOQUEO TOTAL (Para operadores que intentan entrar a la web)
   if (!isAdmin) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-8 text-center">
-        <div className="bg-white p-10 rounded-2xl shadow-xl max-w-md border border-red-100">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
-               <AlertTriangle size={32} />
+      <div className="h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-8 text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-md border border-slate-200">
+            <div className="w-16 h-16 bg-gradient-to-br from-red-100 to-red-200 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+               <AlertTriangle size={32} strokeWidth={1.5} />
             </div>
-            <h1 className="text-2xl font-bold text-red-600 mb-4">Acceso Restringido</h1>
-            <p className="text-slate-600 mb-6 text-lg">
-                Tu usuario tiene rol de <strong className="text-slate-900 uppercase">{role}</strong>. 
+            <h1 className="text-2xl font-bold text-slate-900 mb-3">Acceso Restringido</h1>
+            <p className="text-slate-600 mb-6 text-base leading-relaxed">
+                Tu usuario tiene rol de <strong className="text-slate-900 font-semibold uppercase">{role}</strong>. 
                 <br/><br/>
                 Esta plataforma Web es exclusiva para Administradores y Gerencia.
             </p>
-            <p className="text-sm text-slate-400 bg-slate-100 p-3 rounded-lg">
-                💡 Por favor, utiliza la <strong>App Móvil</strong> para tus tareas de campo.
-            </p>
+            <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 p-4 rounded-lg">
+              <p className="text-sm text-slate-700">
+                📱 Por favor, utiliza la <strong>App Móvil</strong> para tus tareas de campo.
+              </p>
+            </div>
         </div>
       </div>
     );
@@ -65,79 +79,204 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const pathname = usePathname();
+
+  const isActive = (path: string) => pathname === path;
+
   return (
     <ClerkProvider>
       <html lang="es">
         <body className={inter.className}>
           
           {/* ESCENARIO A: USUARIO NO LOGUEADO (Público) */}
-          {/* Aquí mostramos 'children' directamente, que renderizará la Landing Page definida en page.tsx */}
           <SignedOut>
              {children}
           </SignedOut>
 
           {/* ESCENARIO B: USUARIO LOGUEADO (Privado) */}
-          {/* Aquí mostramos el Layout con Sidebar y protegemos con AdminProtector */}
           <SignedIn>
             <AdminProtector>
-              <div className="flex h-screen bg-gray-100">
+              <div className="flex h-screen bg-gradient-to-br from-slate-50 to-slate-100">
                 
-                {/* SIDEBAR DE NAVEGACIÓN */}
-                <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
-                  <div className="p-6">
-                    <h1 className="text-2xl font-bold text-green-400">AgriTrust</h1>
-                    <p className="text-xs text-gray-400">Enterprise Edition</p>
+                {/* SIDEBAR DE NAVEGACIÓN - MEJORADO */}
+                <aside className={`
+                  ${sidebarOpen ? 'w-72' : 'w-20'} 
+                  bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 
+                  text-white 
+                  hidden md:flex flex-col 
+                  transition-all duration-300 ease-out
+                  shadow-2xl
+                  border-r border-slate-700/30
+                `}>
+                  
+                  {/* HEADER DEL SIDEBAR */}
+                  <div className={`p-6 border-b border-slate-700/30 transition-all duration-300`}>
+                    <div className="flex items-center justify-between">
+                      <div className={sidebarOpen ? 'block' : 'hidden'}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-green-500 rounded-lg flex items-center justify-center font-bold text-sm">
+                            AT
+                          </div>
+                          <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
+                            AgriTrust
+                          </h1>
+                        </div>
+                        <p className="text-xs text-slate-400 ml-12">Enterprise Edition</p>
+                      </div>
+                      <button 
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
+                      >
+                        {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+                      </button>
+                    </div>
                   </div>
                   
-                  <nav className="flex-1 px-4 space-y-2 overflow-y-auto pb-4">
-                    <Link href="/" className="flex items-center gap-3 px-4 py-3 bg-slate-800 rounded-lg text-white hover:bg-slate-700 transition">
-                      <LayoutDashboard size={20} /> Dashboard
-                    </Link>
-                    <Link href="/farms" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <MapIcon size={20} /> Mis Ranchos
-                    </Link>
-                    <Link href="/harvest" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <Leaf size={20} /> Cosecha
-                    </Link>
-                    <Link href="/compliance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <AlertTriangle size={20} /> Compliance
-                    </Link>
-                    <Link href="/team" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <Users size={20} /> Equipo
-                    </Link>
-                    <Link href="/shipments" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <Truck size={20} /> Logística
-                    </Link>
-                    <Link href="/claims" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <ShieldAlert size={20} /> Reclamos
-                    </Link>
-                    <Link href="/tools" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                      <Printer size={20} /> Herramientas
-                    </Link>
-                    <Link href="/finance" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-  <PieChart size={20} /> Finanzas
-</Link>
+                  {/* MENÚ DE NAVEGACIÓN */}
+                  <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto pb-4 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                     
-                    <div className="pt-4 mt-auto">
-                        <Link href="/settings" className="flex items-center gap-3 px-4 py-3 text-gray-400 hover:bg-slate-800 hover:text-white rounded-lg transition">
-                        <Settings size={20} /> Configuración
-                        </Link>
+                    {/* DASHBOARD */}
+                    <NavLink 
+                      href="/" 
+                      icon={<LayoutDashboard size={20} />} 
+                      label="Dashboard"
+                      isActive={isActive('/')}
+                      sidebarOpen={sidebarOpen}
+                    />
+                    
+                    {/* OPERACIONES */}
+                    <div className={`${sidebarOpen ? 'block' : 'hidden'} pt-4`}>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-4 mb-3">Operaciones</p>
                     </div>
+
+                    <NavLink 
+                      href="/farms" 
+                      icon={<MapIcon size={20} />} 
+                      label="Mis Ranchos"
+                      isActive={isActive('/farms')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink 
+                      href="/harvest" 
+                      icon={<Leaf size={20} />} 
+                      label="Cosecha"
+                      isActive={isActive('/harvest')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink 
+                      href="/inventory" 
+                      icon={<Package size={20} />} 
+                      label="Almacén"
+                      isActive={isActive('/inventory')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    {/* COMPLIANCE Y SEGURIDAD */}
+                    <div className={`${sidebarOpen ? 'block' : 'hidden'} pt-4`}>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-4 mb-3">Compliance</p>
+                    </div>
+
+                    <NavLink 
+                      href="/compliance" 
+                      icon={<AlertTriangle size={20} />} 
+                      label="Compliance"
+                      isActive={isActive('/compliance')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink 
+                      href="/claims" 
+                      icon={<ShieldAlert size={20} />} 
+                      label="Reclamos"
+                      isActive={isActive('/claims')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    {/* CADENA DE SUMINISTRO */}
+                    <div className={`${sidebarOpen ? 'block' : 'hidden'} pt-4`}>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-4 mb-3">Cadena</p>
+                    </div>
+
+                    <NavLink 
+                      href="/shipments" 
+                      icon={<Truck size={20} />} 
+                      label="Logística"
+                      isActive={isActive('/shipments')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    {/* GESTIÓN */}
+                    <div className={`${sidebarOpen ? 'block' : 'hidden'} pt-4`}>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider px-4 mb-3">Gestión</p>
+                    </div>
+
+                    <NavLink 
+                      href="/finance" 
+                      icon={<PieChart size={20} />} 
+                      label="Finanzas"
+                      isActive={isActive('/finance')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink 
+                      href="/team" 
+                      icon={<Users size={20} />} 
+                      label="Equipo"
+                      isActive={isActive('/team')}
+                      sidebarOpen={sidebarOpen}
+                    />
+
+                    <NavLink 
+                      href="/tools" 
+                      icon={<Printer size={20} />} 
+                      label="Herramientas"
+                      isActive={isActive('/tools')}
+                      sidebarOpen={sidebarOpen}
+                    />
                   </nav>
 
                   {/* PERFIL DE USUARIO */}
-                  <div className="p-4 border-t border-slate-800 flex items-center gap-3 bg-slate-900">
-                    <UserButton showName={true} />
-                    <div className="flex flex-col">
-                       <span className="text-xs font-bold text-white">Mi Cuenta</span>
-                       <span className="text-[10px] text-gray-400">Administrador</span>
-                    </div>
+                  <div className={`p-4 border-t border-slate-700/30 bg-slate-900/50 backdrop-blur-sm ${sidebarOpen ? '' : 'flex justify-center'}`}>
+                    {sidebarOpen ? (
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <UserButton 
+                            showName={true} 
+                            appearance={{
+                              elements: {
+                                userButtonBox: 'flex-col items-start',
+                                userButtonTrigger: 'focus:shadow-none'
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <UserButton />
+                    )}
+                  </div>
+
+                  {/* SETTINGS AL FINAL */}
+                  <div className="p-4 border-t border-slate-700/30">
+                    <NavLink 
+                      href="/settings" 
+                      icon={<Settings size={20} />} 
+                      label="Configuración"
+                      isActive={isActive('/settings')}
+                      sidebarOpen={sidebarOpen}
+                    />
                   </div>
                 </aside>
 
-                {/* CONTENIDO PRINCIPAL (Dashboard) */}
-                <main className="flex-1 overflow-y-auto bg-gray-50">
-                  {children}
+                {/* CONTENIDO PRINCIPAL */}
+                <main className="flex-1 overflow-y-auto">
+                  <div className="min-h-screen">
+                    {children}
+                  </div>
                 </main>
               </div>
             </AdminProtector>
@@ -146,5 +285,37 @@ export default function RootLayout({
         </body>
       </html>
     </ClerkProvider>
+  );
+}
+
+// COMPONENTE AUXILIAR: Link de Navegación Mejorado
+function NavLink({ 
+  href, 
+  icon, 
+  label, 
+  isActive,
+  sidebarOpen 
+}: { 
+  href: string; 
+  icon: React.ReactNode; 
+  label: string; 
+  isActive: boolean;
+  sidebarOpen: boolean;
+}) {
+  return (
+    <Link href={href}>
+      <div className={`
+        flex items-center gap-3 px-4 py-3 
+        rounded-xl transition-all duration-200 ease-out
+        ${isActive 
+          ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/30 font-semibold' 
+          : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+        }
+        ${!sidebarOpen ? 'justify-center' : ''}
+      `}>
+        <span className="flex-shrink-0">{icon}</span>
+        {sidebarOpen && <span className="text-sm font-medium truncate">{label}</span>}
+      </div>
+    </Link>
   );
 }

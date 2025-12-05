@@ -27,7 +27,6 @@ hQIDAQAB
 -----END PUBLIC KEY-----
 `
 
-
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -64,7 +63,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 2. LOGS DE DEPURACIÓN (ESTO ES LO NUEVO) 🕵️‍♂️
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			
+
 			// A. ID de Usuario
 			if sub, ok := claims["sub"].(string); ok {
 				c.Set("clerk_user_id", sub)
@@ -73,11 +72,11 @@ func AuthMiddleware() gin.HandlerFunc {
 
 			// B. Intento de extracción de ROL
 			fmt.Println("🔍 Claims completos recibidos:", claims) // <--- ESTO NOS DIRÁ QUÉ TRAE EL TOKEN
-			
+
 			// Verificamos si existe la metadata
 			if metadataRaw, ok := claims["public_metadata"]; ok {
 				fmt.Printf("   -> Metadata encontrada (Tipo %T): %v\n", metadataRaw, metadataRaw)
-				
+
 				// Intentamos hacer casting a mapa
 				if metadata, ok := metadataRaw.(map[string]interface{}); ok {
 					if role, ok := metadata["role"].(string); ok {
